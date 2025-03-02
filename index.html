@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Ronin Table</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Bienvenido a Ronin Table</h1>
+  <div id="login">
+    <input type="text" id="username" placeholder="Nombre de usuario">
+    <button onclick="startGame()">Entrar</button>
+  </div>
+  <div id="game-list" style="display:none;">
+    <button onclick="joinGame('uno')">Jugar Uno</button>
+  </div>
+  <div id="game-room" style="display:none;">
+    <div class="game-container">
+      <div class="main-content">
+        <div id="discard"></div>
+        <div id="cards"></div>
+      </div>
+      <div class="sidebar">
+        <div id="player-list"></div>
+      </div>
+    </div>
+    <div id="messages" class="message-panel"></div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
