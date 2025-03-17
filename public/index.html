@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoninTable - UNO</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login">
+    <h1>Bienvenido a RoninTable</h1>
+    <input type="text" id="username" placeholder="Ingresa tu nombre de usuario">
+    <button id="enter-btn">Entrar</button>
+  </div>
+
+  <div id="game-list" style="display: none;">
+    <h2>Selecciona un juego</h2>
+    <button id="play-uno">Jugar UNO</button>
+  </div>
+
+  <div id="game-room" style="display: none;">
+    <div class="game-container">
+      <div class="game-header">
+        <div id="player-list"></div>
+        <div id="current-turn-display">Esperando turno...</div>
+      </div>
+      <div class="game-board">
+        <div id="discard" class="discard-area">
+          <div class="discard">Esperando carta inicial...</div>
+        </div>
+        <div class="action-buttons">
+          <button id="grab-button">Agarrar Carta</button>
+          <button id="pass-turn">Pasar Turno</button>
+        </div>
+      </div>
+      <div id="cards" class="player-hand"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/script.js"></script>
+</body>
+</html>
