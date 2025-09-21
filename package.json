@@ -1,9 +1,15 @@
 {
   "name": "jugabilidad",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node index.js",
+    "build": "tsc && cp -r public dist/",
+    "start": "npm run build && node dist/index.js",
+    "dev": "ts-node index.ts",
+    "start:8080": "PORT=8080 npm start",
+    "start:5000": "PORT=5000 npm start",
+    "dev:8080": "PORT=8080 ts-node index.ts",
+    "dev:5000": "PORT=5000 ts-node index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,5 +19,12 @@
   "dependencies": {
     "express": "^5.1.0",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/socket.io": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
   }
 }
