@@ -1,0 +1,63 @@
+Cambios realizados - 2025-09-26
+
+Resumen corto:
+Hoy trabajamos en estabilizar la conexión WebSocket y el flujo de lobbies/espera. Implementamos reconexión persistente, un periodo de gracia en el servidor para desconexiones breves, depuración extensa (logs/trace) y pequeños cambios de UI para identificar al host.
+
+Cambios principales (archivos modificados):
+
+1) server/server.js
+- Implementada lógica de desconexión con periodo de gracia (p. ej. 30s) antes de expulsar un jugador.
+- Añadido handler para `lobby:reconnect` que reasocia socketId y cancela timeouts de expulsión.
+- Normalizados los eventos de lobby para emitir `{ lobbyId }` en `lobby:updated` (compatibilidad con alias camelCase/colon-form).
+- Ajustes en la generación de deck para que los nombres/variant sean compatibles con los assets del cliente.
+- Inicializada la estructura `disconnectTimeouts` (fix a un crash runtime que ocurrió durante las pruebas).
+
+2) src/services/socketService.ts
+- Singleton del socket con logging más detallado (connect/disconnect) y `console.trace()` en llamadas a `disconnect()` para rastrear quién la invoca.
+- Centralización de `emit()` con logging para facilitar debug de eventos.
+
+3) src/contexts/SocketContext.tsx
+- Introducido `SocketProvider` que mantiene una única conexión activa para toda la app (evita conexiones/disconexiones duplicadas y carreras).
+- El provider maneja eventos globales de connect/disconnect/connect_error.
+
+4) src/hooks/useSocket.ts
+- Eliminada la desconexión automática en el cleanup del hook para prevenir desconexiones prematuras.
+- Se delegó la responsabilidad de conectar/desconectar al `SocketProvider`.
+- Añadidos logs de trazado en acciones como `createLobby()`.
+
+5) src/hooks/useGame.ts
+- Persistencia de `activeLobbyId` en localStorage para permitir re-entradas al recargar la página.
+- En `socket.connect` se emite `lobby:reconnect` y se solicita información del lobby (`game:getLobbyInfo`).
+- Suscripción a `lobby:updated` para re-solicitar información del lobby cuando cambie.
+- Registro preliminar de handlers para eventos `game:*` (game:start/game:update/yourHand/promptColor/winner/etc.).
+
+6) src/utils/userSession.ts
+- `userId` persistente en localStorage para identificar al jugador entre reconexiones.
+
+7) src/pages/Game.tsx
+- UI: se muestra una corona (crown) para identificar al host del lobby.
+- El botón "Iniciar" está deshabilitado para los no-hosts y muestra texto indicativo (solo el creador puede iniciar).
+- Corrección para identificar al jugador actual comparando `player.id === session.id`.
+
+8) src/types/game.ts
+- `GamePlayer` extendido con campos opcionales: `isHost`, `isReady`, `isConnected`, `joinedAt` para reflejar mejor el shape enviado por el servidor.
+
+Depuración y correcciones menores:
+- Se añadió trazado (console.trace) y logs verbosos en cliente y servidor para facilitar reproducir el fallo original (conexión→desconexión inmediata).
+- Se corrigieron mismatches de TypeScript en firmas de handlers y tipos actualizados.
+- Se eliminó una desconexión automática que provocaba perder la sala al crearla (root cause del problema reportado).
+
+Estado y siguientes pasos recomendados:
+- Estado: flujo de creación/entrada en lobby y persistencia/reconexión funciona; dos clientes pueden entrar al mismo lobby y el host se identifica correctamente.
+- Falta: completar y probar a fondo la lógica de juego (`game:*`), reparto de manos privadas, turnos y acciones (play/draw/pass/chooseColor/winner).
+- Limpieza: eliminar logs/console.trace cuando todo esté verificado para dejar el código limpio.
+
+Verificado / Notas de prueba:
+- Durante la sesión se reprodujo y solucionó un crash server (uninitialized map). Después de los cambios, al menos dos ventanas pudieron quedarse en la misma lobby y ver al host.
+
+Si querés, puedo:
+- Añadir este resumen a un `CHANGELOG.md` en lugar de un txt suelto.
+- Crear entradas separadas por fecha en `docs/`.
+- Quitar trazas de debug y dejar solo logs relevantes cuando confirmes que todo funciona.
+
+Fin del registro para 2025-09-26.

@@ -1,0 +1,714 @@
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const cors = require('cors');
+
+const app = express();
+const server = http.createServer(app);
+
+// Configurar CORS
+app.use(cors());
+
+const io = socketIo(server, {
+  cors: {
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST']
+  }
+});
+
+// ===== MODELOS BÁSICOS =====
+class Card {
+  constructor(color, value, type, variant = 'a') {
+    this.color = color; // Red, Blue, Green, Yellow, Wild
+    this.value = value; // 0-9, Skip, Reverse, DrawTwo, WildDrawFour
+    this.type = type;   // 'Number' | 'Action' | 'Wild'
+    this.variant = variant; // a/b/c/d for artwork variants
+  }
+}
+
+class UnoGame {
+  constructor(lobbyId, players) {
+    this.lobbyId = lobbyId;
+    this.players = players.map(p => ({ ...p }));
+    this.drawPile = this.createDeck();
+    this.discardPile = [];
+    this.currentTurnIndex = 0;
+    this.direction = 1;
+    this.currentActiveColor = null;
+    this.drawStackCount = 0;
+    this.drawStackActive = false;
+    this.hasDrawnCard = {};
+    this.finishedIds = new Set();
+    this.winners = [];
+
+    this.shuffleDeck();
+    this.dealInitialCards();
+    this.setFirstCard();
+  }
+
+  createDeck() {
+    const deck = [];
+    const colors = ['Red', 'Blue', 'Green', 'Yellow'];
+    const numbers = ['0','1','2','3','4','5','6','7','8','9'];
+    const actions = ['Skip','Reverse','DrawTwo'];
+    const variants = ['a','b'];
+
+    colors.forEach(color => {
+      // 0 variants
+      variants.forEach(v => deck.push(new Card(color, '0', 'Number', v)));
+      // 1-9 two variants
+      numbers.slice(1).forEach(num => variants.forEach(v => deck.push(new Card(color, num, 'Number', v))));
+      // actions
+      actions.forEach(action => variants.forEach(v => deck.push(new Card(color, action, 'Action', v))));
+    });
+
+    // Wilds
+    ['a','b','c','d'].forEach(v => deck.push(new Card('Wild', 'Wild', 'Wild', v)));
+    // Wild Draw Four x4
+    for (let i=0;i<4;i++) deck.push(new Card('Wild','WildDrawFour','Wild','a'));
+
+    return deck;
+  }
+
+  shuffleDeck() {
+    for (let i = this.drawPile.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]];
+    }
+  }
+
+  dealInitialCards() {
+    this.players.forEach(player => {
+      player.hand = [];
+      for (let i = 0; i < 7; i++) {
+        if (this.drawPile.length > 0) player.hand.push(this.drawPile.pop());
+      }
+      player.cardCount = player.hand.length;
+    });
+  }
+
+  setFirstCard() {
+    let firstCard;
+    do {
+      if (this.drawPile.length === 0) this.reshuffleDiscardPile();
+      firstCard = this.drawPile.pop();
+    } while (firstCard.type === 'Wild');
+    this.discardPile.push(firstCard);
+    this.currentActiveColor = firstCard.color;
+  }
+
+  getCurrentCard() {
+    return this.discardPile[this.discardPile.length - 1];
+  }
+
+  isValidPlay(cardToPlay, topDiscardCard, currentActiveColor, drawStackActive) {
+    if (cardToPlay.color === 'Wild' && !drawStackActive) return true;
+    if (drawStackActive) {
+      if (cardToPlay.value === 'DrawTwo' && topDiscardCard.value === 'DrawTwo') return true;
+      if (cardToPlay.value === 'WildDrawFour' && topDiscardCard.value === 'WildDrawFour') return true;
+      return false;
+    }
+    if (cardToPlay.color === topDiscardCard.color || cardToPlay.color === currentActiveColor) return true;
+    if (cardToPlay.value === topDiscardCard.value) return true;
+    return false;
+  }
+
+  drawCard(playerId) {
+    const player = this.players.find(p => p.id === playerId);
+    if (!player) return null;
+    if (this.drawPile.length === 0) this.reshuffleDiscardPile();
+    if (this.drawPile.length === 0) return null;
+    const card = this.drawPile.pop();
+    player.hand.push(card);
+    player.cardCount = player.hand.length;
+    return card;
+  }
+
+  reshuffleDiscardPile() {
+    if (this.discardPile.length <= 1) return;
+    const top = this.discardPile.pop();
+    this.drawPile = [...this.discardPile];
+    this.discardPile = [top];
+    this.shuffleDeck();
+  }
+
+  nextTurn() {
+    this.currentTurnIndex = (this.currentTurnIndex + this.direction + this.players.length) % this.players.length;
+    Object.keys(this.hasDrawnCard).forEach(k => { this.hasDrawnCard[k] = false; });
+  }
+
+  checkWinner() {
+    const finished = this.players.filter(p => p.cardCount === 0 && !this.finishedIds.has(p.id));
+    finished.forEach(p => {
+      this.finishedIds.add(p.id);
+      this.winners.push({ username: p.username, walletAddress: p.walletAddress, socketId: p.socketId, rank: this.winners.length + 1 });
+    });
+    const remaining = this.players.filter(p => !this.finishedIds.has(p.id));
+    if (remaining.length <= 1) {
+      if (remaining.length === 1) {
+        const lp = remaining[0];
+        if (!this.finishedIds.has(lp.id)) {
+          this.finishedIds.add(lp.id);
+          this.winners.push({ username: lp.username, walletAddress: lp.walletAddress, socketId: lp.socketId, rank: this.winners.length + 1 });
+        }
+      }
+      this.status = 'finished';
+      return true;
+    }
+    return false;
+  }
+}
+
+// ===== GESTOR DE LOBBIES =====
+class LobbyManager {
+  constructor() {
+    this.lobbies = new Map();
+    this.games = new Map();
+    this.playerLobbyMap = new Map();
+    this.disconnectTimeouts = new Map();
+  }
+
+  handleDisconnectGrace(lobbyId, playerId, onExpel) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return;
+    const player = lobby.players.find(p => p.id === playerId);
+    if (!player) return;
+    player.isConnected = false;
+    player.disconnectTimestamp = Date.now();
+    const timeoutId = setTimeout(() => {
+      onExpel();
+      this.disconnectTimeouts.delete(playerId);
+    }, 30000);
+    this.disconnectTimeouts.set(playerId, timeoutId);
+  }
+
+  handleReconnect(lobbyId, playerId, newSocketId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return;
+    const player = lobby.players.find(p => p.id === playerId);
+    if (!player) return;
+    player.isConnected = true;
+    player.disconnectTimestamp = null;
+    player.socketId = newSocketId;
+    if (this.disconnectTimeouts.has(playerId)) {
+      clearTimeout(this.disconnectTimeouts.get(playerId));
+      this.disconnectTimeouts.delete(playerId);
+    }
+  }
+
+  createLobby(data, creatorId, creatorUsername, walletAddress, socketId) {
+    const lobbyId = `lobby_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
+    const lobby = {
+      id: lobbyId,
+      name: data.name,
+      type: data.type,
+      status: 'waiting',
+      hostId: creatorId,
+      maxPlayers: data.type === 'publico' ? 8 : data.type === 'privado' ? 6 : 4,
+      players: [{ id: creatorId, username: creatorUsername, walletAddress, socketId, isHost: true, isReady: false, joinedAt: new Date(), isConnected: true }],
+      createdAt: new Date(),
+      ...(data.password && { password: data.password }),
+      ...(data.entryCost && { entryCost: data.entryCost })
+    };
+    this.lobbies.set(lobbyId, lobby);
+    this.playerLobbyMap.set(creatorId, lobbyId);
+    return { success: true, lobby };
+  }
+
+  joinLobby(lobbyId, playerId, username, walletAddress, socketId, password) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { success: false, error: 'Lobby no encontrado' };
+    if (lobby.players.length >= lobby.maxPlayers) return { success: false, error: 'Lobby lleno' };
+    if (lobby.password && lobby.password !== password) return { success: false, error: 'Contraseña incorrecta' };
+    if (this.playerLobbyMap.has(playerId)) return { success: false, error: 'Ya estás en otro lobby' };
+    const player = { id: playerId, username, walletAddress, socketId, isHost: false, isReady: false, joinedAt: new Date(), isConnected: true };
+    lobby.players.push(player);
+    this.playerLobbyMap.set(playerId, lobbyId);
+    return { success: true, lobby };
+  }
+
+  leaveLobby(lobbyId, playerId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { success: false, error: 'Lobby no encontrado' };
+    lobby.players = lobby.players.filter(p => p.id !== playerId);
+    this.playerLobbyMap.delete(playerId);
+    if (lobby.players.length === 0) {
+      this.lobbies.delete(lobbyId);
+    } else {
+      const hasHost = lobby.players.some(p => p.isHost);
+      if (!hasHost && lobby.players.length > 0) {
+        lobby.players[0].isHost = true;
+        lobby.hostId = lobby.players[0].id;
+      }
+    }
+    return { success: true, lobbyId };
+  }
+
+  getActiveLobbiesInfo() {
+    const waitingForPlayers = [];
+    const inGame = [];
+    for (const lobby of this.lobbies.values()) {
+      if (lobby.status === 'waiting' || lobby.status === 'starting') {
+        waitingForPlayers.push({ id: lobby.id, name: lobby.name, type: lobby.type, currentPlayers: lobby.players.length, maxPlayers: lobby.maxPlayers });
+      } else if (lobby.status === 'in-progress') {
+        inGame.push({ id: lobby.id, name: lobby.name, type: lobby.type, players: lobby.players.length });
+      }
+    }
+    return { waitingForPlayers, inGame };
+  }
+
+  startGame(lobbyId, playerId) {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) return { success: false, error: 'Lobby no encontrado' };
+    const player = lobby.players.find(p => p.id === playerId);
+    if (!player || !player.isHost) return { success: false, error: 'Solo el host puede iniciar la partida' };
+    if (lobby.players.length < 2) return { success: false, error: 'Se necesitan al menos 2 jugadores' };
+    const game = new UnoGame(lobbyId, lobby.players);
+    this.games.set(lobbyId, game);
+    lobby.status = 'in_game';
+    return { success: true, game };
+  }
+
+  getGame(lobbyId) {
+    return this.games.get(lobbyId);
+  }
+
+  playCard(lobbyId, playerId, cardIndex) {
+    const game = this.games.get(lobbyId);
+    if (!game) return { success: false, error: 'Juego no encontrado' };
+    const player = game.players.find(p => p.id === playerId);
+    if (!player) return { success: false, error: 'Jugador no encontrado' };
+    const currentPlayer = game.players[game.currentTurnIndex];
+    if (currentPlayer.id !== playerId) return { success: false, error: 'No es tu turno' };
+    if (cardIndex < 0 || cardIndex >= player.hand.length) return { success: false, error: 'Índice de carta inválido' };
+
+    const cardToPlay = player.hand[cardIndex];
+    const topCard = game.getCurrentCard();
+
+    // If there is an active draw stack, only allow stacking the same draw-type
+    if (game.drawStackActive) {
+      const topVal = topCard?.value;
+      if (cardToPlay.value !== topVal) {
+        return { success: false, error: 'Debes jugar un +2/+4 igual o robar/pasar' };
+      }
+    }
+
+    if (!game.isValidPlay(cardToPlay, topCard, game.currentActiveColor, game.drawStackActive)) return { success: false, error: 'Jugada no válida' };
+
+    player.hand.splice(cardIndex,1);
+    player.cardCount = player.hand.length;
+    game.discardPile.push(cardToPlay);
+
+    let action = 'play';
+    let skipNextTurn = false;
+    let drawCards = 0;
+    let needsColorChoice = false;
+
+    if (cardToPlay.type === 'Action') {
+      switch (cardToPlay.value) {
+        case 'Skip': action = 'skip'; skipNextTurn = true; break;
+        case 'Reverse': action = 'reverse'; game.direction *= -1; if (game.players.length === 2) skipNextTurn = true; break;
+        case 'DrawTwo': action = 'drawTwo_played'; game.drawStackCount += 2; game.drawStackActive = true; break;
+      }
+    } else if (cardToPlay.type === 'Wild') {
+      if (cardToPlay.value === 'WildDrawFour') { action = 'drawFour_played'; game.drawStackCount += 4; game.drawStackActive = true; }
+      needsColorChoice = true;
+    }
+
+
+    // For non-wild cards set active color immediately. For wilds (including WildDrawFour)
+    // the active color must be chosen by the player via chooseColor before we change turns
+    if (cardToPlay.color !== 'Wild') game.currentActiveColor = cardToPlay.color;
+
+    // Advance turn only if we don't need the player to choose a color first.
+    if (!needsColorChoice) {
+      if (skipNextTurn) game.nextTurn();
+      game.nextTurn();
+    } else {
+      // When a wild requiring color is played, we hold the turn until chooseColor is called.
+      // Notify caller that a color choice is needed; the server will advance turns after chooseColor.
+    }
+
+    // If there's an active draw stack after advancing the turn, check if the penalized player
+    // can defend immediately. If not, apply the penalty now (so cards are added without
+    // waiting the player to click 'draw').
+    let penalizedPlayerId = null;
+    if (game.drawStackActive && !needsColorChoice) {
+      const penalizedIndex = game.currentTurnIndex;
+      const penalizedPlayer = game.players[penalizedIndex];
+      const lastPlayed = game.getCurrentCard();
+      const canDefend = penalizedPlayer.hand.some(card => (
+        lastPlayed.value === 'WildDrawFour' && card.value === 'WildDrawFour'
+      ) || (
+        lastPlayed.value === 'DrawTwo' && card.value === 'DrawTwo'
+      ));
+      if (canDefend) {
+        action = 'stack_allowed';
+        // allow penalized player to play/stack
+      } else {
+        for (let i = 0; i < game.drawStackCount; i++) game.drawCard(penalizedPlayer.id);
+        action = 'draw_penalty';
+        drawCards = game.drawStackCount;
+        penalizedPlayerId = penalizedPlayer.id;
+        game.drawStackCount = 0;
+        game.drawStackActive = false;
+        // advance turn to the player after the penalized one
+        game.currentTurnIndex = (penalizedIndex + game.direction + game.players.length) % game.players.length;
+      }
+    }
+
+    // NOTE: do not apply draw stack penalty immediately here. We must give the next player
+    // the chance to respond (stack another DrawTwo / WildDrawFour). The penalty will be
+    // applied when the next player chooses to draw (handled in drawCardForPlayer) or fails
+    // to play a defending draw card.
+
+    const gameEnded = game.checkWinner();
+
+    return { success: true, game, playedCard: cardToPlay, action, needsColorChoice, gameEnded, drawCards, penalizedPlayerId };
+  }
+
+  drawCardForPlayer(lobbyId, playerId) {
+    const game = this.games.get(lobbyId);
+    if (!game) return { success: false, error: 'Juego no encontrado' };
+    const currentPlayer = game.players[game.currentTurnIndex];
+    if (currentPlayer.id !== playerId) return { success: false, error: 'No es tu turno' };
+    // If there's an active draw stack (e.g., accumulated +2/+4), the player must take the full penalty
+    if (game.drawStackActive) {
+      const n = game.drawStackCount || 0;
+      if (n <= 0) {
+        // fallback to single draw
+      } else {
+        for (let i = 0; i < n; i++) game.drawCard(playerId);
+        game.drawStackCount = 0;
+        game.drawStackActive = false;
+        // After receiving penalty, skip this player's turn
+        game.nextTurn();
+        return { success: true, game, action: 'draw_penalty', cardsDrawn: n };
+      }
+    }
+
+    // Prevent drawing more than once per turn
+    if (game.hasDrawnCard[playerId]) return { success: false, error: 'Ya robaste esta ronda' };
+    const drawn = game.drawCard(playerId);
+    if (!drawn) return { success: false, error: 'No hay más cartas en el mazo' };
+    game.hasDrawnCard[playerId] = true;
+    return { success: true, game, drawnCard: drawn };
+  }
+
+  passTurn(lobbyId, playerId) {
+    const game = this.games.get(lobbyId);
+    if (!game) return { success: false, error: 'Juego no encontrado' };
+    const currentPlayer = game.players[game.currentTurnIndex];
+    if (currentPlayer.id !== playerId) return { success: false, error: 'No es tu turno' };
+    // If there's an active draw stack, passing means you decline to defend and must take the penalty
+    if (game.drawStackActive) {
+      const n = game.drawStackCount || 0;
+      if (n > 0) {
+        for (let i = 0; i < n; i++) game.drawCard(playerId);
+        game.drawStackCount = 0;
+        game.drawStackActive = false;
+        // After penalizing, skip this player's turn
+        game.nextTurn();
+        return { success: true, game, action: 'draw_penalty', cardsDrawn: n };
+      }
+    }
+
+    if (!game.hasDrawnCard[playerId]) return { success: false, error: 'Debes robar una carta antes de pasar' };
+    game.nextTurn();
+    return { success: true, game };
+  }
+
+  chooseColor(lobbyId, playerId, color) {
+    const game = this.games.get(lobbyId);
+    if (!game) return { success: false, error: 'Juego no encontrado' };
+    const validColors = ['Red','Blue','Green','Yellow'];
+    if (!validColors.includes(color)) return { success: false, error: 'Color inválido' };
+    game.currentActiveColor = color;
+    // If there is an active draw stack (e.g. WildDrawFour) we must apply it now
+    let drawCards = 0;
+    let action = null;
+    if (game.drawStackActive) {
+      const lastPlayed = game.getCurrentCard();
+      // Calculate the penalized player's index (the next in turn order)
+      const penalizedIndex = (game.currentTurnIndex + game.direction + game.players.length) % game.players.length;
+      const penalizedPlayer = game.players[penalizedIndex];
+
+      // Determine if the penalized player can defend (stack) with same-value draw cards
+      const canDefend = penalizedPlayer.hand.some(card => (
+        lastPlayed.value === 'WildDrawFour' && card.value === 'WildDrawFour'
+      ) || (
+        lastPlayed.value === 'DrawTwo' && card.value === 'DrawTwo'
+      ));
+
+      if (canDefend) {
+        // Give the penalized player the turn so they may respond (stack)
+        game.currentTurnIndex = penalizedIndex;
+        action = 'stack_allowed';
+      } else {
+        // Apply the draw penalty to the penalized player and skip their turn
+        for (let i = 0; i < game.drawStackCount; i++) game.drawCard(penalizedPlayer.id);
+        drawCards = game.drawStackCount;
+        game.drawStackCount = 0;
+        game.drawStackActive = false;
+        action = 'draw_penalty';
+        // Set turn to the player after the penalized one
+        game.currentTurnIndex = (penalizedIndex + game.direction + game.players.length) % game.players.length;
+      }
+    }
+
+    // If there was no draw stack (regular Wild), advance the turn normally
+    if (!game.drawStackActive) {
+      // regular wild: after choosing color, next player's turn
+      game.nextTurn();
+    }
+
+    return { success: true, game, chosenColor: color, action, drawCards };
+  }
+}
+
+const lobbyManager = new LobbyManager();
+
+// Manejar conexiones WebSocket
+io.on('connection', (socket) => {
+  console.log(`👤 Usuario conectado: ${socket.id}`);
+  let currentUserId = null;
+
+  // Enviar lista de lobbies al conectar
+  socket.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+  socket.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+
+  // Crear lobby
+  socket.on('lobby:create', (data) => {
+    console.log('🎮 Creando lobby:', data);
+    currentUserId = data.creatorId;
+    const walletAddress = data.creatorUsername;
+    const result = lobbyManager.createLobby(data, data.creatorId, data.creatorUsername, walletAddress, socket.id);
+    socket.emit('lobby:created', result);
+    socket.emit('lobbyCreated', result);
+    if (result.success) {
+      socket.join(result.lobby.id);
+      io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+      io.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+      io.to(result.lobby.id).emit('lobby:updated', { lobbyId: result.lobby.id });
+      io.to(result.lobby.id).emit('lobbyUpdate', { lobbyId: result.lobby.id });
+    }
+  });
+
+  // Unirse a lobby
+  socket.on('lobby:join', (data) => {
+    console.log('👋 Uniéndose a lobby:', data);
+    currentUserId = data.playerId;
+    const walletAddress = data.username;
+    const result = lobbyManager.joinLobby(data.lobbyId, data.playerId, data.username, walletAddress, socket.id, data.password);
+    socket.emit('lobby:joined', result);
+    socket.emit('lobbyJoined', result);
+    if (result.success) {
+      socket.join(data.lobbyId);
+      io.to(data.lobbyId).emit('lobby:updated', { lobbyId: data.lobbyId });
+      io.to(data.lobbyId).emit('lobbyUpdate', { lobbyId: data.lobbyId });
+      io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+      io.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+    }
+  });
+
+  // Salir de lobby
+  socket.on('lobby:leave', (data) => {
+    console.log('🚪 Saliendo de lobby:', data);
+    const result = lobbyManager.leaveLobby(data.lobbyId, data.playerId);
+    socket.emit('lobby:left', result);
+    socket.emit('lobbyLeft', result);
+    if (result.success) {
+      socket.leave(data.lobbyId);
+      io.to(data.lobbyId).emit('lobby:updated', { lobbyId: data.lobbyId });
+      io.to(data.lobbyId).emit('lobbyUpdate', { lobbyId: data.lobbyId });
+      io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+      io.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+    }
+  });
+
+  // Solicitar lista
+  socket.on('lobby:list', () => {
+    socket.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+    socket.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+  });
+
+  // Ready (placeholder)
+  socket.on('lobby:ready', (data) => { console.log('✅ Jugador listo:', data); });
+
+  // Start game
+  socket.on('game:start', (data) => {
+    console.log('🎮 Iniciando partida:', data);
+    const result = lobbyManager.startGame(data.lobbyId, currentUserId);
+    if (result.success) {
+      const game = result.game;
+      const firstCard = game.getCurrentCard();
+      io.to(data.lobbyId).emit('game:started', { gameState: game, firstCard });
+      io.to(data.lobbyId).emit('gameStarted', { gameState: game, firstCard });
+      game.players.forEach(player => {
+        io.to(player.socketId).emit('game:yourHand', player.hand);
+        io.to(player.socketId).emit('yourHand', player.hand);
+      });
+      io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+      io.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+    } else {
+      socket.emit('game:error', result.error);
+    }
+  });
+
+  // Game actions
+  socket.on('game:playCard', (data) => {
+    console.log('🃏 Jugando carta:', data);
+    const result = lobbyManager.playCard(data.lobbyId, currentUserId, data.cardIndex);
+    if (result.success) {
+      const game = result.game;
+      const updateData = {
+        gameState: game,
+        playedCard: result.playedCard,
+        playerPlayed: game.players.find(p => p.id === currentUserId)?.username || 'Unknown',
+        newTurnIndex: game.currentTurnIndex,
+        action: result.action,
+        currentPlayerName: game.players[game.currentTurnIndex]?.username || null,
+        currentActiveColor: game.currentActiveColor,
+        ...(result.drawCards && { cardsDrawn: result.drawCards })
+      };
+      io.to(data.lobbyId).emit('game:update', updateData);
+      const player = game.players.find(p => p.id === currentUserId);
+      if (player) io.to(socket.id).emit('game:yourHand', player.hand);
+      // If a penalty was applied immediately, send the penalized player's updated hand
+      if (result.penalizedPlayerId) {
+        const penalized = game.players.find(p => p.id === result.penalizedPlayerId);
+        if (penalized) io.to(penalized.socketId).emit('game:yourHand', penalized.hand);
+      }
+      if (result.needsColorChoice) socket.emit('game:promptColor', { lobbyId: data.lobbyId, playedCardIndex: data.cardIndex });
+      if (result.gameEnded) {
+        io.to(data.lobbyId).emit('game:over', { gameState: game });
+        game.winners.forEach(w => {
+          const winnerSocket = game.players.find(p => p.username === w.username)?.socketId;
+          if (winnerSocket) io.to(winnerSocket).emit('game:winner', { username: w.username, rank: w.rank, gameState: game });
+        });
+      }
+    } else {
+      socket.emit('game:error', result.error);
+    }
+  });
+
+  socket.on('game:drawCard', (data) => {
+    console.log('🎯 Robando carta:', data);
+    const result = lobbyManager.drawCardForPlayer(data.lobbyId, currentUserId);
+    if (result.success) {
+      const game = result.game;
+      const player = game.players.find(p => p.id === currentUserId);
+      if (player) io.to(socket.id).emit('game:yourHand', player.hand);
+      const updateData = { gameState: game, playerPlayed: game.players.find(p => p.id === currentUserId)?.username || 'Unknown', newTurnIndex: game.currentTurnIndex, action: 'draw', currentPlayerName: game.players[game.currentTurnIndex]?.username || null, currentActiveColor: game.currentActiveColor };
+      io.to(data.lobbyId).emit('game:update', updateData);
+    } else {
+      socket.emit('game:error', result.error);
+    }
+  });
+
+  socket.on('game:passTurn', (data) => {
+    console.log('⏭️ Pasando turno:', data);
+    const result = lobbyManager.passTurn(data.lobbyId, currentUserId);
+    if (result.success) {
+      const game = result.game;
+      const updateData = { gameState: game, playerPlayed: game.players.find(p => p.id === currentUserId)?.username || 'Unknown', newTurnIndex: game.currentTurnIndex, action: 'pass', currentPlayerName: game.players[game.currentTurnIndex]?.username || null, currentActiveColor: game.currentActiveColor };
+      io.to(data.lobbyId).emit('game:update', updateData);
+    } else {
+      socket.emit('game:error', result.error);
+    }
+  });
+
+  socket.on('game:chooseColor', (data) => {
+    console.log('🎨 Eligiendo color:', data);
+    const result = lobbyManager.chooseColor(data.lobbyId, currentUserId, data.color, data.cardIndex);
+    if (result.success) {
+      const game = result.game;
+      const updateData = { gameState: game, playerPlayed: game.players.find(p => p.id === currentUserId)?.username || 'Unknown', newTurnIndex: game.currentTurnIndex, action: 'color_chosen', currentPlayerName: game.players[game.currentTurnIndex]?.username || null, currentActiveColor: game.currentActiveColor };
+      io.to(data.lobbyId).emit('game:update', updateData);
+    } else {
+      socket.emit('game:error', result.error);
+    }
+  });
+
+  socket.on('game:getLobbyInfo', (data) => {
+    console.log('📋 Solicitando info del lobby:', data);
+    const lobby = lobbyManager.lobbies.get(data.lobbyId);
+    if (lobby) {
+      socket.emit('game:lobbyInfo', { success: true, lobby });
+      const game = lobbyManager.getGame(data.lobbyId);
+      if (game) {
+        socket.emit('game:gameInfo', { success: true, game });
+        const player = game.players.find(p => p.id === currentUserId);
+        if (player) socket.emit('game:yourHand', player.hand);
+      }
+    } else {
+      socket.emit('game:lobbyInfo', { success: false, error: 'Lobby no encontrado' });
+    }
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('👤 Usuario desconectado:', socket.id, { reason, currentUserId });
+    if (currentUserId && lobbyManager.playerLobbyMap.has(currentUserId)) {
+      const lobbyId = lobbyManager.playerLobbyMap.get(currentUserId);
+      console.log(`⏳ Marcando usuario ${currentUserId} como desconectado en lobby ${lobbyId}`);
+      lobbyManager.handleDisconnectGrace(lobbyId, currentUserId, () => {
+        // Before expelling, ensure lobby still exists (it might have been cancelled)
+        if (!lobbyManager.lobbies.has(lobbyId)) {
+          console.log(`⚠️ Lobby ${lobbyId} not present at expel time, skipping expel for ${currentUserId}`);
+          return;
+        }
+        console.log(`� Expulsando finalmente a ${currentUserId} del lobby ${lobbyId}`);
+        const result = lobbyManager.leaveLobby(lobbyId, currentUserId);
+        if (result.success) {
+          io.to(lobbyId).emit('lobby:updated', { lobbyId });
+          io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+        }
+      });
+      io.to(lobbyId).emit('lobby:updated', { lobbyId });
+      io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+    }
+  });
+
+  // Cancel lobby explicitly by host before starting
+  socket.on('lobby:cancel', (data) => {
+    console.log('🛑 Lobby cancel requested:', data);
+    const { lobbyId, playerId } = data;
+    const lobby = lobbyManager.lobbies.get(lobbyId);
+    if (!lobby) { socket.emit('lobby:left', { success: false, lobbyId }); return; }
+    if (lobby.hostId !== playerId) { socket.emit('lobby:left', { success: false, lobbyId }); return; }
+    if (lobby.status !== 'waiting') { socket.emit('lobby:left', { success: false, lobbyId }); return; }
+    // Notify clients in the lobby that it was cancelled
+    io.to(lobbyId).emit('lobby:cancelled', { lobbyId });
+    io.to(lobbyId).emit('lobbyCancelled', { lobbyId });
+
+    // Central cleanup using LobbyManager helper
+    try {
+      const cleaned = lobbyManager.cleanupLobby(lobbyId);
+      if (!cleaned) {
+        // fallback: remove player mappings
+        lobby.players.forEach(p => { if (lobbyManager.playerLobbyMap.has(p.id)) lobbyManager.playerLobbyMap.delete(p.id); });
+        lobbyManager.lobbies.delete(lobbyId);
+      }
+    } catch (e) {
+      console.error('Error during cleanupLobby:', e);
+    }
+
+    socket.emit('lobby:left', { success: true, lobbyId });
+    io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+    io.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
+  });
+
+  socket.on('lobby:reconnect', ({ lobbyId, userId }) => {
+    console.log(`🔄 Usuario ${userId} reconectando a lobby ${lobbyId} con socket ${socket.id}`);
+    lobbyManager.handleReconnect(lobbyId, userId, socket.id);
+    io.to(lobbyId).emit('lobby:updated', { lobbyId });
+    io.emit('lobby:list-updated', lobbyManager.getActiveLobbiesInfo());
+  });
+});
+
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`🚀 Servidor WebSocket corriendo en puerto ${PORT}`);
+  console.log(`🔗 Clientes pueden conectarse desde: http://localhost:5173`);
+  console.log(`📋 Eventos disponibles: lobby:*, game:*`);
+});
