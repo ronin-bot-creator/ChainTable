@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { useState } from 'react';
-import type { CreateLobbyFormData } from '../types/lobby';
+import type { CreateLobbyFormData, SupportedToken } from '../types/lobby';
 
 interface LobbyCardProps {
   title: string;
@@ -45,8 +45,8 @@ const LobbyCard: React.FC<LobbyCardProps> = ({ title, type, onCreateLobby, onUpd
   // Form state (controlled)
   const [name, setName] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [entryCost, setEntryCost] = useState<number>(10);
-  const [token, setToken] = useState<string>('native');
+  const [entryCost, setEntryCost] = useState<string>('10');
+  const [token, setToken] = useState<SupportedToken>('ETH');
   const [mode, setMode] = useState<'BEAST' | 'CLASSIC'>('BEAST');
 
   return (
@@ -85,7 +85,7 @@ const LobbyCard: React.FC<LobbyCardProps> = ({ title, type, onCreateLobby, onUpd
               <label className="block text-sm text-gray-400 mb-2">Entry cost:</label>
               <input
                 value={entryCost}
-                onChange={(e) => setEntryCost(Number(e.target.value))}
+                onChange={(e) => setEntryCost(e.target.value)}
                 type="number"
                 min={1}
                 className={`w-full bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none ${colors.border} transition-colors`}
@@ -94,9 +94,14 @@ const LobbyCard: React.FC<LobbyCardProps> = ({ title, type, onCreateLobby, onUpd
 
             <div>
               <label className="block text-sm text-gray-400 mb-2">Token:</label>
-              <select value={token} onChange={(e) => setToken(e.target.value)} className={`w-full bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none ${colors.border}`}>
-                <option value="native">RON (native)</option>
-                <option value="weth">WETH (ERC20)</option>
+              <select 
+                value={token} 
+                onChange={(e) => setToken(e.target.value as SupportedToken)} 
+                className={`w-full bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none ${colors.border}`}
+              >
+                <option value="ETH">ETH (native)</option>
+                <option value="RON">RON (native)</option>
+                <option value="RONKE">RONKE (ERC20)</option>
               </select>
             </div>
 
