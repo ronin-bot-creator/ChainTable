@@ -1,42 +1,676 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RoninTable - UNO</title>
-  <link rel="stylesheet" href="/styles.css">
+  <meta charset="utf-8" />
+  <title>Lobby UNO</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial;
+    background: #0b1220;
+    color: #e6f0ff;
+    margin: 20px;
+  }
+
+  h1, h2, h3 {
+    color: #9cc1ff;
+  }
+
+  button {
+    background: #1e6fff;
+    color: #fff;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    opacity: .9;
+  }
+
+  /* ================== ÁREA DE JUEGO ================== */
+  #game-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;         /* centra horizontalmente */
+    justify-content: flex-start;
+    gap: 20px;
+    margin-top: 20px;
+
+    /* Fondo tipo mesa */
+    background: radial-gradient(circle, #1b2b4a 0%, #0b1220 100%);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 0 25px rgba(0,0,0,.5);
+    width: 95%;                   /* ocupa casi toda la pantalla */
+    max-width: 1400px;            /* antes 1000px */
+    min-height: 80vh;             /* tablero más alto, ocupa el 80% de la pantalla */
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Pila y mano centrados */
+  #discard-pile, 
+  #player-hand {
+    display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;       /* 🚫 no permite saltar de línea */
+  overflow-x: auto;        /* scroll horizontal si no entran */
+  padding: 10px;
+  max-width: 100%;
+  }
+
+  /* Encabezados centrados */
+  #game-area h3 {
+    text-align: center;
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  /* ================== CARTAS ================== */
+  .card {
+    width: 150px;   /* ancho fijo */
+    height: 200px;  /* alto fijo */
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,.35);
+  }
+
+  .card img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 12px;
+  }
+
+  .Red { background:#f44336 }
+  .Blue { background:#2196f3 }
+  .Green { background:#4caf50 }
+  .Yellow { background:#ffeb3b; color:#000 }
+  .Wild {
+    background: linear-gradient(135deg, 
+      #f44336 25%, #2196f3 25%, 
+      #2196f3 50%, #4caf50 50%, 
+      #4caf50 75%, #ffeb3b 75%);
+    color:#000;
+  }
+
+  /* ================== GANADOR / FEED ================== */
+  #winner-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0ea5e9;
+    color: #0b1220;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    display: none;
+    z-index: 9999;
+  }
+
+  #winners-feed {
+    list-style: none;
+    padding-left: 0;
+    margin-top: 10px;
+    background: #1b2b4a;
+    border: 1px solid #1e6fff;
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+
+  #winners-feed li { 
+    margin: 4px 0; 
+    font-weight: 600; 
+  }
+
+  /* ================== MENSAJES ================== */
+  #game-message {
+    position: fixed;
+    top: 60px;  /* justo debajo del título */
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #233554;
+    color: #fff;
+    border-radius: 5px;
+    padding: 10px 20px;
+    text-align: center;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: none;
+    z-index: 1000;
+  }
+
+  /* ================== COLOR PICKER ================== */
+  .color-btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 12px;
+    border: 3px solid #fff;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .color-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.6);
+  }
+
+  /* Colores */
+  .color-btn.red    { background:#f44336; }
+  .color-btn.blue   { background:#2196f3; }
+  .color-btn.green  { background:#4caf50; }
+  .color-btn.yellow { background:#ffeb3b; }
+</style>
+
+
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-  <div id="login">
-    <h1>Bienvenido a RoninTable</h1>
-    <input type="text" id="username" placeholder="Ingresa tu nombre de usuario">
-    <button id="enter-btn">Entrar</button>
+  <h1>Lobby UNO</h1>
+  <p>Estado de la conexión: <span id="status">Intentando conectar.</span></p>
+
+  <!-- Info de turno y color actual -->
+  <div id="turn-info" style="display:none; text-align:center; margin-top:20px; margin-bottom:10px;">
+    <span id="turn-player" style="font-size:1.3em; font-weight:bold; letter-spacing:1px;">TURN: </span>
+    <span id="turn-player-name" style="font-size:1.3em; font-weight:bold;"></span>
+    <span id="turn-color" style="display:inline-block; width:32px; height:32px; border-radius:50%; margin-left:18px; vertical-align:middle; border:2.5px solid #fff; box-shadow:0 0 6px #000;"></span>
   </div>
 
-  <div id="game-list" style="display: none;">
-    <h2>Selecciona un juego</h2>
-    <button id="play-uno">Jugar UNO</button>
+  <div id="user-setup">
+    <h2>Ingresa tu nombre de usuario</h2>
+    <input type="text" id="username-input" placeholder="Nombre de usuario" required>
+    <button id="set-username-btn">Guardar Nombre</button>
   </div>
 
-  <div id="game-room" style="display: none;">
-    <div class="game-container">
-      <div class="game-header">
-        <div id="player-list"></div>
-        <div id="current-turn-display">Esperando turno...</div>
-      </div>
-      <div class="game-board">
-        <div id="discard" class="discard-area">
-          <div class="discard">Esperando carta inicial...</div>
-        </div>
-        <div class="action-buttons">
-          <button id="grab-button">Agarrar Carta</button>
-          <button id="pass-turn">Pasar Turno</button>
-        </div>
-      </div>
-      <div id="cards" class="player-hand"></div>
+  <div id="lobby-section" style="display: none;">
+    <h2>Crear Lobby</h2>
+    <div id="lobby-form">
+      <input type="text" id="lobby-name" placeholder="Nombre del Lobby" required>
+      <label><input type="checkbox" id="is-private"> Privado</label>
+      <input type="password" id="lobby-password" placeholder="Contraseña (si es privado)">
+      <button id="create-lobby-btn">Crear Lobby</button>
+    </div>
+
+    <h2>Lobbies Públicos Disponibles</h2>
+    <button id="list-lobbies-btn">Actualizar Lista</button>
+    <ul id="lobbies-list"></ul>
+  </div>
+
+  <div id="lobby-info" style="display:none;">
+    <h2>Lobby Actual: <span id="current-lobby-name"></span></h2>
+    <p>ID: <span id="current-lobby-id"></span></p>
+    <p>Jugadores: <span id="players-count"></span>/8</p>
+    <ul id="players-list"></ul>
+    <button id="start-game-btn" style="display: none;">Iniciar Partida</button>
+  </div>
+
+  <div id="game-area" style="display:none;">
+    <!-- Toast + Feed de ganadores -->
+    <div id="winner-toast"></div>
+    <h3>Ganadores</h3>
+    <ul id="winners-feed"></ul>
+
+    <div id="game-message"></div>
+
+    <h3>Pila de Descarte</h3>
+    <div id="discard-pile"></div>
+
+    <h3>Tu Mano</h3>
+    <div id="player-hand"></div>
+
+    <button id="draw-card-btn">Robar Carta</button>
+    <button id="pass-turn-btn">Pasar Turno</button>
+  </div>
+
+  <div id="color-picker-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); z-index: 100;">
+  <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 20px; border-radius: 10px; text-align: center;">
+    <h3 style="color:#0b1220;">Elige un color para el WILD</h3>
+    
+    <div id="color-options" style="display:flex; gap:15px; justify-content:center; margin-top:15px;">
+      <button class="color-btn red"   onclick="chooseColor('Red')"></button>
+      <button class="color-btn blue"  onclick="chooseColor('Blue')"></button>
+      <button class="color-btn green" onclick="chooseColor('Green')"></button>
+      <button class="color-btn yellow" onclick="chooseColor('Yellow')"></button>
+    </div>
+  </div>
+</div>
+
+
+  <script>
+    // ================== Estado/Socket ==================
+    const socket = io();
+    let username = '';
+    let currentLobbyId = null;
+    let currentWildCardIndex = null;
+
+    const statusEl = document.getElementById('status');
+    socket.on('connect', ()=> statusEl.textContent = 'Conectado.');
+    socket.on('disconnect', ()=> statusEl.textContent = 'Desconectado.');
+
+    // ================== UI Helpers ==================
+
+  function displayGameMessage(msg){
+    const el = document.getElementById('game-message');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function rankEmoji(rank){ return rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`${rank}°`; }
+  function rankNombre(rank){ return rank===1?'ORO':rank===2?'PLATA':rank===3?'BRONCE':`${rank}°`; }
+  function showWinnerToast(username, rank){
+    const el = document.getElementById('winner-toast');
+    el.textContent = `${rankEmoji(rank)} ${username} salió ${rankNombre(rank)}!`;
+    el.style.display = 'block';
+    setTimeout(()=>{ el.style.display = 'none'; }, 2500);
+  }
+  function addWinnerToFeed(username, rank){
+    const feed = document.getElementById('winners-feed');
+    const li = document.createElement('li');
+    li.textContent = `${rankEmoji(rank)} ${username}`;
+    feed.appendChild(li);
+  }
+
+  // 🔹 NUEVO: helper para ver si es la carta Red 1 personalizada
+  function isCustomImageCard(card){
+    return card.color === 'Red' && String(card.value) === '1';
+  }
+
+  // dentro de buildDeck() en index.js
+const colors = ['Red','Blue','Green','Yellow'];
+const deck = [];
+
+// 0 (una sola por color)
+colors.forEach(color => {
+  deck.push({ id: crypto.randomUUID(), color, type:'Number', value:0 });
+});
+
+// 1..9 (dos por color: a y b)
+for (let n=1; n<=9; n++){
+  colors.forEach(color => {
+    deck.push({ id: crypto.randomUUID(), color, type:'Number', value:n, variant:'a' });
+    deck.push({ id: crypto.randomUUID(), color, type:'Number', value:n, variant:'b' });
+  });
+}
+
+// Acciones (+2/Reverse/Skip) dos por color (a/b)
+const actions = [
+  {type:'Action', value:'DrawTwo'},
+  {type:'Action', value:'Reverse'},
+  {type:'Action', value:'Skip'}
+];
+colors.forEach(color => {
+  actions.forEach(a => {
+    deck.push({ id: crypto.randomUUID(), color, ...a, variant:'a' });
+    deck.push({ id: crypto.randomUUID(), color, ...a, variant:'b' });
+  });
+});
+
+// Comodines (sin variant)
+for (let i=0;i<4;i++) deck.push({ id: crypto.randomUUID(), color:'Wild', type:'Wild', value:'Wild' });
+for (let i=0;i<4;i++) deck.push({ id: crypto.randomUUID(), color:'Wild', type:'Wild', value:'WildDrawFour' });
+
+// ================== Render de Cartas ==================
+
+// Devuelve la ruta de la imagen según la carta
+function cardImageSrc(card) {
+  const color = card.color.toLowerCase();
+  const value = String(card.value).toLowerCase();
+
+  if (card.type === 'Number') {
+    // Ej: red-4a.png o blue-7b.png
+    return `/cards/${color}-${value}${card.variant}.png`;
+  }
+
+  if (card.type === 'Action') {
+    // Ej: bluereverse-a.png, yellowplus-b.png
+    if (value === 'drawtwo') return `/cards/${color}plus-${card.variant}.png`;
+    if (value === 'skip') return `/cards/${color}skip-${card.variant}.png`;
+    if (value === 'reverse') return `/cards/${color}reverse-${card.variant}.png`;
+  }
+
+  if (card.type === 'Wild') {
+    if (value === 'wild') {
+      // 4 diseños: wild-a.png, wild-b.png, wild-c.png, wild-d.png
+      return `/cards/wild-${card.variant}.png`;
+    }
+    if (value === 'wilddrawfour') {
+      // todas iguales
+      return `/cards/+4.png`;
+    }
+  }
+
+  return null;
+}
+
+
+
+function displayCard(card, containerId, replace=false) {
+  const cont = document.getElementById(containerId);
+  if (replace) cont.innerHTML = '';
+
+  const src = cardImageSrc(card);
+  const c = document.createElement('div');
+  c.className = 'card';
+
+  if (src) {
+    const img = document.createElement('img');
+    img.src = src + '?v=' + Date.now(); // evita cache
+    img.alt = `${card.color} ${card.value}`;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.borderRadius = '8px';
+    c.appendChild(img);
+  } else {
+    c.textContent = `${card.color} ${card.value}`;
+  }
+
+  cont.appendChild(c);
+}
+
+function displayHand(hand) {
+  const cont = document.getElementById('player-hand');
+  cont.innerHTML = '';
+  hand.forEach((card, idx) => {
+    const src = cardImageSrc(card);
+    const c = document.createElement('div');
+    c.className = 'card';
+    c.style.cursor = 'pointer';
+    c.onclick = () => playCard(idx);
+
+    if (src) {
+      const img = document.createElement('img');
+      img.src = src + '?v=' + Date.now(); // evita cache
+      img.alt = `${card.color} ${card.value}`;
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.borderRadius = '8px';
+      c.appendChild(img);
+    } else {
+      c.textContent = `${card.color} ${card.value}`;
+    }
+
+    cont.appendChild(c);
+  });
+}
+
+
+    // ================== Flujos Lobby ==================
+    document.getElementById('set-username-btn').onclick = ()=>{
+      const val = document.getElementById('username-input').value.trim();
+      if (!val) return alert('Poné tu nombre 😅');
+      username = val;
+      document.getElementById('user-setup').style.display = 'none';
+      document.getElementById('lobby-section').style.display = 'block';
+    };
+
+    document.getElementById('create-lobby-btn').onclick = ()=>{
+      const lobbyName = document.getElementById('lobby-name').value.trim();
+      const isPrivate = document.getElementById('is-private').checked;
+      const password = document.getElementById('lobby-password').value;
+      if (!username) return alert('Primero guardá tu nombre.');
+      if (!lobbyName) return alert('Poné un nombre al lobby.');
+      socket.emit('createLobby', { username, lobbyName, isPrivate, password });
+    };
+
+    document.getElementById('list-lobbies-btn').onclick = ()=> socket.emit('listLobbies');
+
+    function joinLobby(lobbyId, askPass){
+      let password = undefined;
+      if (askPass) password = prompt('Contraseña del lobby privado:') || '';
+      socket.emit('joinLobby', { lobbyId, username, password });
+    }
+
+    // Errores del server → mensaje visible
+    socket.on('lobbyError', (msg)=>{
+      displayGameMessage(`⚠️ ${msg}`);
+    });
+
+    // Al crear o unirse, oculto secciones iniciales y muestro el lobby
+    socket.on('lobbyCreated', (lobby)=>{
+      currentLobbyId = lobby.id;
+      displayLobbyInfo(lobby);
+      document.getElementById('user-setup').style.display = 'none';
+      document.getElementById('lobby-section').style.display = 'none';
+      const lobbyInfo = document.getElementById('lobby-info');
+      lobbyInfo.style.display = 'block';
+      lobbyInfo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    socket.on('lobbyJoined', (lobby)=>{
+      currentLobbyId = lobby.id;
+      displayLobbyInfo(lobby);
+      document.getElementById('user-setup').style.display = 'none';
+      document.getElementById('lobby-section').style.display = 'none';
+      const lobbyInfo = document.getElementById('lobby-info');
+      lobbyInfo.style.display = 'block';
+      lobbyInfo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    socket.on('lobbiesList', (lobbies)=>{
+      const list = document.getElementById('lobbies-list');
+      list.innerHTML = '';
+      lobbies.forEach(lobby=>{
+        const li = document.createElement('li');
+        li.textContent = `${lobby.name} (${lobby.playersCount}/${lobby.maxPlayers} jugadores) `;
+        const btn = document.createElement('button');
+        btn.textContent = 'Unirse';
+        btn.onclick = ()=> joinLobby(lobby.id, false);
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+    });
+
+    socket.on('lobbyUpdate', displayLobbyInfo);
+
+    function displayLobbyInfo(lobby){
+      document.getElementById('current-lobby-name').textContent = lobby.name;
+      document.getElementById('current-lobby-id').textContent = lobby.id;
+      document.getElementById('players-count').textContent = lobby.players.length;
+      const ul = document.getElementById('players-list');
+      ul.innerHTML = '';
+      lobby.players.forEach(p=>{
+        const li = document.createElement('li');
+        li.textContent = p.username;
+        ul.appendChild(li);
+      });
+
+      const startBtn = document.getElementById('start-game-btn');
+      startBtn.onclick = ()=> socket.emit('startGame', { lobbyId: lobby.id });
+      startBtn.style.display = (lobby.hostId === socket.id && lobby.status === 'waiting') ? 'block' : 'none';
+    }
+
+    // ================== Juego ==================
+
+    function updateTurnDisplay(lobby) {
+  if (!lobby) return;
+  const current = lobby.players[lobby.currentTurnIndex];
+  if (current) {
+    document.getElementById('turn-player-name').textContent = current.username;
+  } else {
+    document.getElementById('turn-player-name').textContent = '';
+  }
+
+  const colorCircle = document.getElementById('turn-color');
+  if (lobby.currentActiveColor === 'Wild') {
+    colorCircle.style.background = 'linear-gradient(135deg, #f44336 25%, #2196f3 25%, #2196f3 50%, #4caf50 50%, #4caf50 75%, #ffeb3b 75%)';
+    colorCircle.style.borderColor = '#fff';
+  } else {
+    const map = {Red:'#f44336', Blue:'#2196f3', Green:'#4caf50', Yellow:'#ffeb3b'};
+    colorCircle.style.background = map[lobby.currentActiveColor] || '#fff';
+    colorCircle.style.borderColor = map[lobby.currentActiveColor] || '#fff';
+  }
+}
+
+
+
+    socket.on('gameStarted', ({ lobby, firstCard })=>{
+      alert(`¡La partida en ${lobby.name} ha comenzado!`);
+      document.getElementById('lobby-info').style.display = 'none';
+      document.getElementById('game-area').style.display = 'block';
+      document.getElementById('turn-info').style.display = 'block';
+      displayCard(firstCard, 'discard-pile', true);
+      updateTurnDisplay(lobby);
+    });
+
+    socket.on('yourHand', displayHand);
+
+    // Ganador: toast + feed
+    socket.on('winnerFound', ({ username, rank, lobbyState })=>{
+      showWinnerToast(username, rank);
+      addWinnerToFeed(username, rank);
+      updateTurnDisplay(lobbyState);
+    });
+
+    // Actualización de partida
+    socket.on('gameUpdate', (data)=>{
+      document.getElementById('turn-info').style.display = 'block';
+      if (data.currentPlayerName) {
+        document.getElementById('turn-player-name').textContent = data.currentPlayerName;
+      } else {
+        document.getElementById('turn-player-name').textContent = '';
+      }
+
+      // color
+      const colorCircle = document.getElementById('turn-color');
+      if (data.currentActiveColor === 'Wild'){
+        colorCircle.style.background = 'linear-gradient(135deg, #f44336 25%, #2196f3 25%, #2196f3 50%, #4caf50 50%, #4caf50 75%, #ffeb3b 75%)';
+        colorCircle.style.borderColor = '#fff';
+      } else if (data.currentActiveColor){
+        const map = {Red:'#f44336', Blue:'#2196f3', Green:'#4caf50', Yellow:'#ffeb3b'};
+        colorCircle.style.background = map[data.currentActiveColor] || '#fff';
+        colorCircle.style.borderColor = map[data.currentActiveColor] || '#fff';
+      }
+
+      const lobbyState = data.lobbyState;
+      const topDiscardCard = lobbyState.discardPile[lobbyState.discardPile.length - 1];
+      displayCard(topDiscardCard, 'discard-pile', true);
+
+      if (data.action === 'draw') displayGameMessage(`${data.playerPlayed} robó una carta.`);
+      else if (data.action === 'pass') displayGameMessage(`${data.playerPlayed} pasó el turno.`);
+      else if (data.action === 'skip') displayGameMessage(`¡${data.playerPlayed} jugó SKIP!`);
+      else if (data.action === 'reverse') displayGameMessage(`¡${data.playerPlayed} jugó REVERSE!`);
+      else if (data.action === 'drawTwo_played') displayGameMessage(`+2 en juego...`);
+      else if (data.action === 'drawFour_played') displayGameMessage(`+4 en juego...`);
+      else if (data.action === 'draw_penalty') displayGameMessage(`${data.playerPlayed} recibió ${data.cardsDrawn} cartas de penalidad.`);
+      else if (data.action === 'color_chosen') displayGameMessage(`${data.playerPlayed} eligió color.`);
+      // else if (data.action === 'play') { /* silencioso para no tapar el toast */ }
+    });
+
+    socket.on('gameOver', ({ lobbyState }) => {
+  // Construir tabla de resultados
+  let results = "🏆 ¡Partida Terminada! 🏆\n\n";
+  lobbyState.winners.forEach(w => {
+    const label = w.rank===1?'🥇 Oro':w.rank===2?'🥈 Plata':w.rank===3?'🥉 Bronce':`${w.rank}° Lugar`;
+    results += `${label}: ${w.username}\n`;
+  });
+  if (lobbyState.players.length > 0) {
+    results += `\nÚltimo jugador: ${lobbyState.players[0].username} (No clasificado)`;
+  }
+
+  // Mostrar modal con resultados
+  document.getElementById('gameover-results').textContent = results;
+  document.getElementById('gameover-modal').style.display = 'flex';
+
+  // Reset de estado local
+  currentLobbyId = null;
+  currentWildCardIndex = null;
+
+  // Ocultar tablero/lobby mientras mostramos resultados
+  document.getElementById('game-area').style.display = 'none';
+  document.getElementById('lobby-info').style.display = 'none';
+
+  // Limpiar tablero para próxima partida
+  document.getElementById('winners-feed').innerHTML = '';
+  document.getElementById('game-message').style.display = 'none';
+  document.getElementById('discard-pile').innerHTML = '';
+  document.getElementById('player-hand').innerHTML = '';
+
+  // Después de 5 segundos volver al home automáticamente
+  setTimeout(() => {
+    document.getElementById('gameover-modal').style.display = 'none';
+    document.getElementById('lobby-section').style.display = 'block';
+    socket.emit('listLobbies'); // refrescar lobbies disponibles
+  }, 5000);
+});
+
+
+
+
+
+
+    // Wild color picker
+    socket.on('promptColor', ({ lobbyId, playedCardIndex })=>{
+      currentLobbyId = lobbyId;
+      currentWildCardIndex = playedCardIndex;
+      document.getElementById('color-picker-overlay').style.display = 'block';
+    });
+    window.chooseColor = function(color){
+      document.getElementById('color-picker-overlay').style.display = 'none';
+      socket.emit('chooseColor', { lobbyId: currentLobbyId, color, cardIndex: currentWildCardIndex });
+      currentWildCardIndex = null;
+    };
+
+    function backToHome(){
+  document.getElementById('gameover-modal').style.display = 'none';
+  document.getElementById('lobby-info').style.display = 'none';
+  document.getElementById('game-area').style.display = 'none';
+
+  // resetear feeds y mensajes
+  document.getElementById('winners-feed').innerHTML = '';
+  document.getElementById('game-message').style.display = 'none';
+
+  // mostrar sección de lobbies y refrescar lista
+  document.getElementById('lobby-section').style.display = 'block';
+  socket.emit('listLobbies');  // 🔹 fuerza a traer los lobbies disponibles
+}
+
+// --- Acciones de juego --- //
+
+// Jugar carta
+function playCard(cardIndex){
+  if (!currentLobbyId) return;
+  socket.emit('playCard', { lobbyId: currentLobbyId, cardIndex });
+}
+
+// Robar carta
+document.getElementById('draw-card-btn').onclick = () => {
+  if (!currentLobbyId) return;
+  socket.emit('drawCard', { lobbyId: currentLobbyId });
+};
+
+// Pasar turno
+document.getElementById('pass-turn-btn').onclick = () => {
+  if (!currentLobbyId) return;
+  socket.emit('passTurn', { lobbyId: currentLobbyId });
+};
+
+
+  </script>
+    <!-- ================== MODAL GAME OVER ================== -->
+  <div id="gameover-modal" 
+       style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
+              background:rgba(0,0,0,0.85); z-index:2000; 
+              align-items:center; justify-content:center;">
+    <div style="background:#fff; color:#0b1220; padding:30px; border-radius:12px; width:90%; max-width:500px; text-align:center;">
+      <h2 style="margin-bottom:15px;">🏆 ¡Partida Terminada! 🏆</h2>
+      <div id="gameover-results" style="white-space:pre-line; margin-bottom:20px;"></div>
+      <button onclick="backToHome()" 
+              style="padding:10px 20px; border:none; border-radius:8px; background:#1e6fff; color:#fff; font-weight:600; cursor:pointer;">
+        Volver a Inicio
+      </button>
     </div>
   </div>
 
-  <script type="module" src="/src/script.js"></script>
 </body>
 </html>
+
