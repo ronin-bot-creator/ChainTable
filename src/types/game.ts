@@ -77,7 +77,8 @@ export interface GameUpdateData {
   playerPlayed: string;
   newTurnIndex: number;
   action: 'play' | 'draw' | 'pass' | 'skip' | 'reverse' | 'drawTwo_played' | 
-          'drawFour_played' | 'draw_penalty' | 'color_chosen' | 'player_disconnected';
+    'drawFour_played' | 'draw_penalty' | 'color_chosen' | 'player_disconnected' |
+    'stack_allowed' | 'stack_not_allowed';
   currentPlayerName: string | null;
   currentActiveColor: string | null;
   cardsDrawn?: number;

@@ -2,6 +2,30 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const { ethers } = require('ethers');
+
+// Cargar variables de entorno PRIMERO
+require('dotenv').config({ path: '../.env' });
+
+// Luego cargar contractService (que usa process.env)
+const contractService = require('./contractService');
+
+const RPC_SEPOLIA = process.env.RPC_URL_SEPOLIA || process.env.RPC_URL || '';
+let sepoliaProvider = null;
+
+if (RPC_SEPOLIA && RPC_SEPOLIA.length > 0) {
+  sepoliaProvider = new ethers.JsonRpcProvider(RPC_SEPOLIA);
+  console.log('Using RPC_SEPOLIA provider from env');
+} else {
+  // fallback to public Sepolia RPC
+  try {
+    sepoliaProvider = new ethers.JsonRpcProvider('https://rpc.sepolia.org');
+    console.warn('RPC_URL_SEPOLIA not configured, using public Sepolia RPC (may be rate limited).');
+  } catch (e) {
+    console.warn('Could not create fallback Sepolia provider:', e);
+    sepoliaProvider = null;
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +51,7 @@ class Card {
 }
 
 class UnoGame {
-  constructor(lobbyId, players) {
+  constructor(lobbyId, players, lobbyData = {}) {
     this.lobbyId = lobbyId;
     this.players = players.map(p => ({ ...p }));
     this.drawPile = this.createDeck();
@@ -40,6 +64,10 @@ class UnoGame {
     this.hasDrawnCard = {};
     this.finishedIds = new Set();
     this.winners = [];
+    
+    // CRITICAL: Incluir información del lobby para auto-distribución de premios
+    this.type = lobbyData.type; // 'gratuito' | 'pago'
+    this.onchainLobbyId = lobbyData.onchainLobbyId; // ID del lobby en el contrato
 
     this.shuffleDeck();
     this.dealInitialCards();
@@ -207,6 +235,10 @@ class LobbyManager {
       maxPlayers: data.type === 'publico' ? 8 : data.type === 'privado' ? 6 : 4,
       players: [{ id: creatorId, username: creatorUsername, walletAddress, socketId, isHost: true, isReady: false, joinedAt: new Date(), isConnected: true }],
       createdAt: new Date(),
+      ...(data.onchain && { onchain: data.onchain }),
+      ...(data.token && { token: data.token }),
+      ...(data.mode && { mode: data.mode }),
+      ...(data.network && { network: data.network }),
       ...(data.password && { password: data.password }),
       ...(data.entryCost && { entryCost: data.entryCost })
     };
@@ -263,7 +295,14 @@ class LobbyManager {
     const player = lobby.players.find(p => p.id === playerId);
     if (!player || !player.isHost) return { success: false, error: 'Solo el host puede iniciar la partida' };
     if (lobby.players.length < 2) return { success: false, error: 'Se necesitan al menos 2 jugadores' };
-    const game = new UnoGame(lobbyId, lobby.players);
+    
+    // CRITICAL: Pasar información del lobby al juego para auto-distribución de premios
+    const lobbyData = {
+      type: lobby.type,
+      onchainLobbyId: lobby.onchain?.lobbyId || lobby.onchainLobbyId
+    };
+    
+    const game = new UnoGame(lobbyId, lobby.players, lobbyData);
     this.games.set(lobbyId, game);
     lobby.status = 'in_game';
     return { success: true, game };
@@ -329,10 +368,11 @@ class LobbyManager {
       // Notify caller that a color choice is needed; the server will advance turns after chooseColor.
     }
 
-    // If there's an active draw stack after advancing the turn, check if the penalized player
-    // can defend immediately. If not, apply the penalty now (so cards are added without
-    // waiting the player to click 'draw').
-    let penalizedPlayerId = null;
+    // If there's an active draw stack after advancing the turn, DO NOT apply the penalty here.
+    // We must give the penalized player the opportunity to respond (stack another +2/+4)
+    // or to draw/pass. The actual penalty (drawing the accumulated cards and skipping the
+    // player's turn) will be applied by `drawCardForPlayer` or `passTurn` when the penalized
+    // player chooses to draw or explicitly passes.
     if (game.drawStackActive && !needsColorChoice) {
       const penalizedIndex = game.currentTurnIndex;
       const penalizedPlayer = game.players[penalizedIndex];
@@ -342,19 +382,14 @@ class LobbyManager {
       ) || (
         lastPlayed.value === 'DrawTwo' && card.value === 'DrawTwo'
       ));
+      // Notify clients whether stacking is allowed. Do NOT apply the penalty here.
       if (canDefend) {
         action = 'stack_allowed';
-        // allow penalized player to play/stack
       } else {
-        for (let i = 0; i < game.drawStackCount; i++) game.drawCard(penalizedPlayer.id);
-        action = 'draw_penalty';
-        drawCards = game.drawStackCount;
-        penalizedPlayerId = penalizedPlayer.id;
-        game.drawStackCount = 0;
-        game.drawStackActive = false;
-        // advance turn to the player after the penalized one
-        game.currentTurnIndex = (penalizedIndex + game.direction + game.players.length) % game.players.length;
+        action = 'stack_not_allowed';
       }
+      // Note: the actual penalty will be applied when the penalized player chooses to draw
+      // (drawCardForPlayer) or explicitly passes (passTurn).
     }
 
     // NOTE: do not apply draw stack penalty immediately here. We must give the next player
@@ -364,7 +399,7 @@ class LobbyManager {
 
     const gameEnded = game.checkWinner();
 
-    return { success: true, game, playedCard: cardToPlay, action, needsColorChoice, gameEnded, drawCards, penalizedPlayerId };
+  return { success: true, game, playedCard: cardToPlay, action, needsColorChoice, gameEnded, drawCards };
   }
 
   drawCardForPlayer(lobbyId, playerId) {
@@ -478,11 +513,14 @@ io.on('connection', (socket) => {
   socket.emit('lobbiesList', lobbyManager.getActiveLobbiesInfo());
 
   // Crear lobby
-  socket.on('lobby:create', (data) => {
+  socket.on('lobby:create', async (data) => {
     console.log('🎮 Creando lobby:', data);
     currentUserId = data.creatorId;
-    const walletAddress = data.creatorUsername;
-    const result = lobbyManager.createLobby(data, data.creatorId, data.creatorUsername, walletAddress, socket.id);
+    // store onchain metadata if provided
+    const meta = {};
+    if (data.onchain) meta.onchain = data.onchain;
+    const walletAddress = data.walletAddress || data.creatorUsername; // use wallet address from client
+    const result = await lobbyManager.createLobby({ ...data, ...meta }, data.creatorId, data.creatorUsername, walletAddress, socket.id);
     socket.emit('lobby:created', result);
     socket.emit('lobbyCreated', result);
     if (result.success) {
@@ -492,14 +530,70 @@ io.on('connection', (socket) => {
       io.to(result.lobby.id).emit('lobby:updated', { lobbyId: result.lobby.id });
       io.to(result.lobby.id).emit('lobbyUpdate', { lobbyId: result.lobby.id });
     }
+
+    // If onchain metadata provided for Sepolia, try to resolve on-chain lobbyId from receipt and store it
+    if (data.onchain && data.onchain.chain === 'sepolia' && data.onchain.txHash && sepoliaProvider) {
+      (async () => {
+        try {
+          const txHash = data.onchain.txHash;
+          console.log('Resolving on-chain lobbyId for tx', txHash);
+          let receipt = null;
+          try {
+            receipt = await sepoliaProvider.waitForTransaction(txHash, 1, 60000);
+          } catch (e) {
+            try { receipt = await sepoliaProvider.getTransactionReceipt(txHash); } catch (e2) { receipt = null; }
+          }
+          if (!receipt) { console.warn('Could not obtain receipt for createLobby tx', txHash); return; }
+          if (receipt.status === 0) { console.warn('createLobby tx reverted', txHash); return; }
+
+          // parse logs looking for LobbyCreated
+          const iface = new ethers.Interface(['event LobbyCreated(uint256 indexed lobbyId, address indexed creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode)']);
+          for (const log of receipt.logs) {
+            try {
+              const parsed = iface.parseLog(log);
+              if (parsed && parsed.name === 'LobbyCreated') {
+                const onchainLobbyId = parsed.args?.lobbyId?.toString?.() || null;
+                if (onchainLobbyId) {
+                  const serverLobby = lobbyManager.lobbies.get(result.lobby.id);
+                  if (serverLobby) {
+                    // Guardar en ambos lugares para compatibilidad
+                    serverLobby.onchainLobbyId = Number(onchainLobbyId);
+                    serverLobby.onchain = serverLobby.onchain || {};
+                    serverLobby.onchain.lobbyId = onchainLobbyId;
+                    console.log('✅ Stored onchainLobbyId for server lobby', result.lobby.id, '→', onchainLobbyId);
+                    io.to(result.lobby.id).emit('lobby:updated', { lobbyId: result.lobby.id });
+                  }
+                }
+                break;
+              }
+            } catch (e) {
+              // non-matching log
+            }
+          }
+        } catch (e) {
+          console.error('Error resolving onchain lobbyId for create', e);
+        }
+      })();
+    }
   });
 
   // Unirse a lobby
-  socket.on('lobby:join', (data) => {
+  socket.on('lobby:join', async (data) => {
     console.log('👋 Uniéndose a lobby:', data);
     currentUserId = data.playerId;
-    const walletAddress = data.username;
-    const result = lobbyManager.joinLobby(data.lobbyId, data.playerId, data.username, walletAddress, socket.id, data.password);
+    const walletAddress = data.walletAddress || data.username;
+    
+    // joinLobby ahora es async y maneja la verificación on-chain internamente
+    const result = await lobbyManager.joinLobby(
+      data.lobbyId, 
+      data.playerId, 
+      data.username, 
+      walletAddress, 
+      socket.id, 
+      data.password,
+      data.onchain?.txHash // Pasar el txHash si existe
+    );
+    
     socket.emit('lobby:joined', result);
     socket.emit('lobbyJoined', result);
     if (result.success) {
@@ -586,6 +680,84 @@ io.on('connection', (socket) => {
           const winnerSocket = game.players.find(p => p.username === w.username)?.socketId;
           if (winnerSocket) io.to(winnerSocket).emit('game:winner', { username: w.username, rank: w.rank, gameState: game });
         });
+        
+        // Distribuir premios on-chain para lobbies de pago
+        const lobby = lobbyManager.lobbies.get(data.lobbyId);
+        if (lobby && lobby.type === 'pago') {
+          if (!lobby.onchainLobbyId || lobby.onchainLobbyId === '0' || lobby.onchainLobbyId === 0) {
+            console.error('❌ Este lobby de pago NO tiene un lobbyId on-chain válido.');
+            console.error('   Esto significa que el lobby NO se creó on-chain correctamente.');
+            console.error('   Los fondos no pueden distribuirse automáticamente.');
+            console.error('   TIP: Asegúrate de crear el lobby usando createLobby del contrato primero.');
+            
+            // Notificar al host
+            const hostPlayer = lobby.players?.find(p => p.isHost);
+            if (hostPlayer) {
+              io.to(hostPlayer.socketId).emit('game:prizeError', {
+                error: 'Este lobby no fue creado on-chain. No se pueden distribuir premios automáticamente.'
+              });
+            }
+            return;
+          }
+          
+          (async () => {
+            try {
+              console.log('💰 Distribuyendo premios on-chain...');
+              console.log('📊 Game winners:', JSON.stringify(game.winners, null, 2));
+              console.log('👥 Game players:', JSON.stringify(game.players.map(p => ({ 
+                id: p.id, 
+                username: p.username, 
+                walletAddress: p.walletAddress 
+              })), null, 2));
+              
+              // Extraer addresses de ganadores en orden
+              const winnerAddresses = game.winners.map(w => w.walletAddress).filter(addr => addr);
+              
+              console.log('🏆 Winner addresses extraídas:', winnerAddresses);
+              
+              if (winnerAddresses.length === 0) {
+                console.error('❌ No hay direcciones de ganadores válidas');
+                console.error('   Esto puede ser porque:');
+                console.error('   1. Los jugadores no tienen walletAddress definido');
+                console.error('   2. game.winners está vacío');
+                console.error('   3. walletAddress es undefined/null');
+                return;
+              }
+              
+              console.log('✅ Datos de distribución de premios:');
+              console.log('   Winners:', winnerAddresses);
+              console.log('   Lobby ID on-chain:', lobby.onchainLobbyId);
+              console.log('   Mode:', lobby.mode);
+              console.log('   Network:', lobby.paymentConfig?.network);
+              
+              // Emitir evento al host para que ejecute la distribución
+              const hostPlayer = lobby.players.find(p => p.isHost);
+              console.log('\n👤 Buscando host del lobby...');
+              console.log('   Host player found:', hostPlayer ? 'YES' : 'NO');
+              
+              if (hostPlayer) {
+                console.log('   Host ID:', hostPlayer.id);
+                console.log('   Host username:', hostPlayer.username);
+                console.log('   Host socketId:', hostPlayer.socketId);
+                console.log('   Host isConnected:', hostPlayer.isConnected);
+                
+                console.log('\n📤 Emitiendo evento game:distributePrizes al host...');
+                io.to(hostPlayer.socketId).emit('game:distributePrizes', {
+                  lobbyId: lobby.onchainLobbyId,
+                  winners: winnerAddresses,
+                  mode: lobby.mode
+                });
+                console.log('✅ Evento game:distributePrizes emitido al socketId:', hostPlayer.socketId);
+              } else {
+                console.error('❌ NO se encontró el host del lobby!');
+                console.error('   Jugadores actuales:', lobby.players.map(p => ({ id: p.id, isHost: p.isHost, socketId: p.socketId })));
+              }
+              
+            } catch (error) {
+              console.error('❌ Error preparando distribución de premios:', error.message);
+            }
+          })();
+        }
       }
     } else {
       socket.emit('game:error', result.error);
@@ -646,6 +818,48 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Manejador para cuando el host confirma la distribución de premios
+  socket.on('game:prizeDistributed', async (data) => {
+    console.log('💰 Recibiendo confirmación de distribución de premios:', data);
+    
+    try {
+      const { txHash, lobbyId } = data;
+      
+      if (!txHash) {
+        console.error('❌ No se proporcionó txHash de distribución');
+        return;
+      }
+      
+      // Verificar que la transacción fue exitosa
+      const receipt = await contractService.provider.getTransactionReceipt(txHash);
+      
+      if (!receipt) {
+        console.error('❌ Transacción no encontrada');
+        socket.emit('game:prizeError', { error: 'Transacción no encontrada' });
+        return;
+      }
+      
+      if (receipt.status === 0) {
+        console.error('❌ Transacción de distribución falló');
+        socket.emit('game:prizeError', { error: 'La transacción de distribución falló' });
+        return;
+      }
+      
+      console.log('✅ Premios distribuidos exitosamente!');
+      
+      // Notificar a todos en el lobby
+      io.to(lobbyId).emit('game:prizesDistributed', {
+        success: true,
+        txHash,
+        message: 'Los premios han sido distribuidos on-chain'
+      });
+      
+    } catch (error) {
+      console.error('❌ Error verificando distribución de premios:', error.message);
+      socket.emit('game:prizeError', { error: error.message });
+    }
+  });
+
   socket.on('disconnect', (reason) => {
     console.log('👤 Usuario desconectado:', socket.id, { reason, currentUserId });
     if (currentUserId && lobbyManager.playerLobbyMap.has(currentUserId)) {
@@ -683,14 +897,16 @@ io.on('connection', (socket) => {
 
     // Central cleanup using LobbyManager helper
     try {
-      const cleaned = lobbyManager.cleanupLobby(lobbyId);
-      if (!cleaned) {
-        // fallback: remove player mappings
-        lobby.players.forEach(p => { if (lobbyManager.playerLobbyMap.has(p.id)) lobbyManager.playerLobbyMap.delete(p.id); });
-        lobbyManager.lobbies.delete(lobbyId);
-      }
+      // Direct cleanup since cleanupLobby method doesn't exist
+      lobby.players.forEach(p => { 
+        if (lobbyManager.playerLobbyMap.has(p.id)) {
+          lobbyManager.playerLobbyMap.delete(p.id); 
+        }
+      });
+      lobbyManager.lobbies.delete(lobbyId);
+      console.log(`Lobby ${lobbyId} cleaned up successfully`);
     } catch (e) {
-      console.error('Error during cleanupLobby:', e);
+      console.error('Error during cleanup:', e);
     }
 
     socket.emit('lobby:left', { success: true, lobbyId });
@@ -707,6 +923,18 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
+// Inicializar contractService
+(async () => {
+  try {
+    await contractService.initialize();
+    console.log('✅ ContractService inicializado correctamente');
+  } catch (error) {
+    console.error('⚠️ Error inicializando ContractService:', error.message);
+    console.error('El servidor funcionará pero no podrá verificar pagos on-chain');
+  }
+})();
+
 server.listen(PORT, () => {
   console.log(`🚀 Servidor WebSocket corriendo en puerto ${PORT}`);
   console.log(`🔗 Clientes pueden conectarse desde: http://localhost:5173`);

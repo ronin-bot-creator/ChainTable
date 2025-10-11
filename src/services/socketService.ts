@@ -7,8 +7,8 @@ export interface SocketEvents {
   'lobby:reconnect': (data: { lobbyId: string; userId: string }) => void;
   // ===== EVENTOS DE LOBBY =====
   // Cliente al servidor
-  'lobby:create': (data: CreateLobbyFormData & { creatorId: string; creatorUsername: string }) => void;
-  'lobby:join': (data: { lobbyId: string; playerId: string; username: string; password?: string }) => void;
+  'lobby:create': (data: CreateLobbyFormData & { creatorId: string; creatorUsername: string; walletAddress: string }) => void;
+  'lobby:join': (data: { lobbyId: string; playerId: string; username: string; walletAddress: string; password?: string; onchain?: { txHash: string; contract: string; chain: string } }) => void;
   'lobby:cancel': (data: { lobbyId: string; playerId: string }) => void;
   'lobby:leave': (data: { lobbyId: string; playerId: string }) => void;
   'lobby:list': () => void;
@@ -44,6 +44,7 @@ export interface SocketEvents {
   'game:passTurn': (data: { lobbyId: string }) => void;
   'game:chooseColor': (data: { lobbyId: string; color: WildColor; cardIndex: number }) => void;
   'game:getLobbyInfo': (data: { lobbyId: string }) => void;
+  'game:prizeDistributed': (data: { txHash: string; lobbyId: string }) => void;
 
   // Servidor al cliente
   'game:started': (data: { gameState: GameState; firstCard: Card }) => void;
@@ -55,6 +56,9 @@ export interface SocketEvents {
   'game:error': (message: string) => void;
   'game:lobbyInfo': (data: { success: boolean; lobby?: any; error?: string }) => void;
   'game:gameInfo': (data: { success: boolean; game?: GameState; error?: string }) => void;
+  'game:distributePrizes': (data: { lobbyId: string; winners: string[]; mode: string }) => void;
+  'game:prizesDistributed': (data: { success: boolean; txHash: string; message: string }) => void;
+  'game:prizeError': (data: { error: string }) => void;
 
   // Eventos de conexión
   'connect': () => void;
@@ -123,20 +127,20 @@ class SocketService {
   }
 
   // Métodos para lobbies
-  createLobby(data: CreateLobbyFormData, creatorId: string, creatorUsername: string): void {
+  createLobby(data: CreateLobbyFormData, creatorId: string, creatorUsername: string, walletAddress: string): void {
     if (!this.socket?.connected) {
       throw new Error('No hay conexión con el servidor');
     }
-    console.debug('socketService.createLobby ->', { data, creatorId, creatorUsername });
-    this.emit('lobby:create', { ...data, creatorId, creatorUsername });
+    console.debug('socketService.createLobby ->', { data, creatorId, creatorUsername, walletAddress });
+    this.emit('lobby:create', { ...data, creatorId, creatorUsername, walletAddress });
   }
 
-  joinLobby(lobbyId: string, playerId: string, username: string, password?: string): void {
+  joinLobby(lobbyId: string, playerId: string, username: string, walletAddress: string, password?: string, onchain?: { txHash: string; contract: string; chain: string }): void {
     if (!this.socket?.connected) {
       throw new Error('No hay conexión con el servidor');
     }
-    console.debug('socketService.joinLobby ->', { lobbyId, playerId, username, password });
-    this.emit('lobby:join', { lobbyId, playerId, username, password });
+    console.debug('socketService.joinLobby ->', { lobbyId, playerId, username, walletAddress, password, onchain });
+    this.emit('lobby:join', { lobbyId, playerId, username, walletAddress, password, onchain });
   }
 
   leaveLobby(lobbyId: string, playerId: string): void {

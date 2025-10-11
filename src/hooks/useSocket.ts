@@ -17,6 +17,7 @@ interface UseSocketReturn {
   }>;
   createLobby: (data: CreateLobbyFormData, creatorId: string, creatorUsername: string) => Promise<Lobby>;
   joinLobby: (lobbyId: string, password?: string) => Promise<void>;
+  joinLobbyOnchain: (lobbyId: string, password?: string, onchain?: { txHash: string; contract: string; chain: string }) => Promise<void>;
   leaveLobby: (lobbyId: string) => Promise<void>;
   cancelLobby: (lobbyId: string) => Promise<void>;
   refreshLobbies: () => void;
@@ -97,8 +98,54 @@ export const useSocket = (): UseSocketReturn => {
         }
       };
 
+      // Extraer walletAddress de la sesión del usuario
+      const userSession = getUserSession();
+      const walletAddress = userSession?.walletAddress || creatorUsername;
+
       socketService.on('lobby:created', handleResponse);
-      socketService.createLobby(data, creatorId, creatorUsername);
+      socketService.createLobby(data, creatorId, creatorUsername, walletAddress);
+    }).finally(() => {
+      setIsLoading(false);
+    });
+  }, [isConnected]);
+
+  // Unirse a un lobby enviando prueba on-chain (txHash)
+  const joinLobbyOnchain = useCallback(async (lobbyId: string, password?: string, onchain?: { txHash: string; contract: string; chain: string }) => {
+    if (!isConnected) {
+      throw new Error('No hay conexión con el servidor');
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    return new Promise<void>((resolve, reject) => {
+      // Obtener datos únicos del usuario para esta sesión
+      const userSession = getUserSession();
+      if (!userSession) {
+        reject(new Error('No hay sesión de usuario activa'));
+        return;
+      }
+      const playerId = userSession.id;
+      const username = userSession.username;
+      const walletAddress = userSession.walletAddress || username; // Usar wallet si existe
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Timeout: El servidor no respondió'));
+      }, 10000);
+
+      const handleResponse = (response: { success: boolean; lobby?: Lobby; error?: string }) => {
+        clearTimeout(timeoutId);
+        socketService.off('lobby:joined', handleResponse);
+
+        if (response.success) {
+          resolve();
+          refreshLobbies(); // Actualizar la lista de lobbies
+        } else {
+          reject(new Error(response.error || 'Error desconocido al unirse al lobby'));
+        }
+      };
+
+      socketService.on('lobby:joined', handleResponse);
+      socketService.joinLobby(lobbyId, playerId, username, walletAddress, password, onchain);
     }).finally(() => {
       setIsLoading(false);
     });
@@ -122,6 +169,7 @@ export const useSocket = (): UseSocketReturn => {
       }
       const playerId = userSession.id;
       const username = userSession.username;
+      const walletAddress = userSession.walletAddress || username; // Usar wallet si existe
       const timeoutId = setTimeout(() => {
         reject(new Error('Timeout: El servidor no respondió'));
       }, 10000);
@@ -139,7 +187,7 @@ export const useSocket = (): UseSocketReturn => {
       };
 
       socketService.on('lobby:joined', handleResponse);
-      socketService.joinLobby(lobbyId, playerId, username, password);
+      socketService.joinLobby(lobbyId, playerId, username, walletAddress, password);
     }).finally(() => {
       setIsLoading(false);
     });
@@ -283,6 +331,7 @@ export const useSocket = (): UseSocketReturn => {
     activeLobbies,
     createLobby,
     joinLobby,
+    joinLobbyOnchain,
     leaveLobby,
     cancelLobby: async (lobbyId: string) => {
       if (!isConnected) throw new Error('No hay conexión con el servidor');

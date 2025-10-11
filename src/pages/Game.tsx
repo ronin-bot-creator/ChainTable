@@ -42,8 +42,12 @@ const Game: React.FC = () => {
     winners,
     gameMessage,
     leaveGame,
+    // autoDistributePrizes manejado internamente por useGame
   } = useGame(lobbyId || '');
   const { cancelLobby } = useSocket();
+
+  // AUTO-DISTRIBUTION: Manejado ÚNICAMENTE desde el evento del servidor 
+  // 'game:distributePrizes' en useGame.ts para evitar llamadas duplicadas
 
   if (!lobbyId || !session) {
     return null; // Se redirigirá en useEffect
@@ -142,6 +146,13 @@ const Game: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-800 mb-6">
               🎉 ¡Partida Terminada!
             </h1>
+
+            {/* Mensaje del sistema (incluye info de premios) */}
+            {gameMessage && (
+              <div className="mb-6 p-4 bg-blue-100 rounded-lg border-2 border-blue-400">
+                <p className="text-blue-800 font-medium">{gameMessage}</p>
+              </div>
+            )}
 
             {/* Podium */}
             <div className="mb-8">

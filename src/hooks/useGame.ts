@@ -21,6 +21,9 @@ interface UseGameReturn {
   passTurn: () => void;
   chooseWildColor: (color: WildColor) => void;
   
+  // Premios (NEW in V2)
+  autoDistributePrizes: (winnerAddresses: string[]) => Promise<any>;
+  
   // Estados UI
   isLoading: boolean;
   error: string | null;
@@ -129,6 +132,111 @@ export function useGame(lobbyId: string): UseGameReturn {
     setTimeout(() => setGameMessage(null), duration);
   }, []);
 
+  /**
+   * Auto-distribución de premios (NEW in V2)
+   * Cualquier jugador puede llamar esta función cuando se muestra el podio
+   * No depende del evento del servidor
+   */
+  const autoDistributePrizes = useCallback(async (winnerAddresses: string[]) => {
+    console.log('🎁 [AUTO-DISTRIBUTE] Iniciando auto-distribución de premios');
+    console.log('   📌 Winners:', winnerAddresses);
+    console.log('   📌 Game State:', gameState);
+    
+    try {
+      // Verificar si es un lobby de pago
+      if (!gameState || (gameState as any).type !== 'pago') {
+        console.log('ℹ️ Lobby gratuito, no hay premios on-chain');
+        return;
+      }
+
+      const onchainLobbyId = (gameState as any).onchainLobbyId || (gameState as any).onchain?.lobbyId;
+      if (!onchainLobbyId) {
+        console.error('❌ No se encontró onchainLobbyId');
+        showGameMessage('❌ No se puede distribuir: Lobby ID no disponible', 3000);
+        return;
+      }
+
+      console.log('   📌 On-chain Lobby ID:', onchainLobbyId);
+
+      // Importar dinámicamente ethers
+      const { ethers } = await import('ethers');
+      
+      if (!window.ethereum) {
+        console.error('❌ MetaMask no disponible');
+        showGameMessage('❌ MetaMask no detectado', 3000);
+        return;
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      console.log('✅ User address:', userAddress);
+      
+      // ABI actualizado para V2
+      const contractABI = [
+        'function endLobby(uint256 lobbyId, address[] calldata winners) external',
+        'function isPlayerInLobby(uint256 lobbyId, address player) external view returns (bool)'
+      ];
+      
+      const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS_SEPOLIA || '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B';
+      const contract = new ethers.Contract(contractAddress, contractABI, signer);
+      
+      console.log('📝 Contrato V2:', contractAddress);
+      
+      // Verificar que el usuario sea un jugador del lobby (V2 feature)
+      const isPlayer = await contract.isPlayerInLobby(onchainLobbyId, userAddress);
+      console.log('   🎮 Is player in lobby:', isPlayer);
+      
+      if (!isPlayer) {
+        console.log('⚠️ Usuario no es jugador del lobby, no puede distribuir premios');
+        showGameMessage('⚠️ Solo los jugadores pueden distribuir premios', 3000);
+        return;
+      }
+      
+      console.log('🔑 Llamando endLobby con:');
+      console.log('   - lobbyId:', onchainLobbyId);
+      console.log('   - winners:', winnerAddresses);
+      
+      showGameMessage('🔄 Distribuyendo premios on-chain...', 0);
+      
+      // Llamar a endLobby
+      console.log('⏳ Enviando transacción endLobby...');
+      const tx = await contract.endLobby(onchainLobbyId, winnerAddresses);
+      console.log('✅ Transacción enviada:', tx.hash);
+      
+      showGameMessage('⏳ Esperando confirmación... Esto puede tomar unos segundos', 0);
+      const receipt = await tx.wait();
+      
+      console.log('✅ Premios distribuidos:', receipt.hash);
+      showGameMessage(`✅ Premios distribuidos! TX: ${receipt.hash.slice(0, 10)}...`, 8000);
+      
+      // Notificar al servidor (opcional, para logging)
+      socketService.emit('game:prizeDistributed', {
+        txHash: receipt.hash,
+        lobbyId
+      });
+      
+      return receipt;
+      
+    } catch (error: any) {
+      console.error('❌ Error en auto-distribución:', error);
+      
+      // Mensajes de error más específicos
+      let errorMsg = 'Error desconocido';
+      if (error.code === 'ACTION_REJECTED') {
+        errorMsg = 'Transacción rechazada por el usuario';
+      } else if (error.reason) {
+        errorMsg = error.reason;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      showGameMessage(`❌ Error: ${errorMsg}`, 8000);
+      throw error;
+    }
+  }, [gameState, lobbyId, showGameMessage]);
+
   // Inicializar listeners de Socket.IO
   useEffect(() => {
     // Solo añadir listeners, la conexión se maneja globalmente
@@ -201,6 +309,22 @@ export function useGame(lobbyId: string): UseGameReturn {
         case 'drawFour_played':
           showGameMessage(`+4 en juego...`);
           break;
+        case 'stack_allowed':
+          // Indica al penalizado que puede responder (apilar) si tiene la carta
+          if (data.currentPlayerName === session?.username) {
+            showGameMessage('Tienes un stack sobre ti. Puedes apilar +2/+4 si tienes la carta.');
+          } else {
+            showGameMessage(`${data.playerPlayed} puede ser apilado`);
+          }
+          break;
+        case 'stack_not_allowed':
+          // Indica que no hay defensa posible; el jugador debería robar/pasar
+          if (data.currentPlayerName === session?.username) {
+            showGameMessage('No puedes defenderte. Debes robar las cartas acumuladas y se te saltará el turno.');
+          } else {
+            showGameMessage(`${data.playerPlayed} no puede defenderse y deberá robar`);
+          }
+          break;
         case 'draw_penalty':
           showGameMessage(`${data.playerPlayed} recibió ${data.cardsDrawn} cartas de penalidad`);
           break;
@@ -234,6 +358,27 @@ export function useGame(lobbyId: string): UseGameReturn {
       setIsLoading(false);
     };
 
+    // Distribución de premios desde evento del servidor
+    const handleDistributePrizes = async (data: { lobbyId: string; winners: string[]; mode: string }) => {
+      console.log('💰 [FRONTEND] Evento game:distributePrizes recibido:', data);
+      console.log('   📌 Lobby ID:', data.lobbyId);
+      console.log('   📌 Winners:', data.winners);
+      console.log('   📌 Mode:', data.mode);
+      
+      // Delegar a autoDistributePrizes para evitar código duplicado
+      await autoDistributePrizes(data.winners);
+    };
+
+    const handlePrizesDistributed = (data: { success: boolean; txHash: string; message: string }) => {
+      console.log('✅ Premios distribuidos confirmados:', data);
+      showGameMessage(`✅ ${data.message}`, 5000);
+    };
+
+    const handlePrizeError = (data: { error: string }) => {
+      console.error('❌ Error en distribución:', data.error);
+      showGameMessage(`❌ ${data.error}`, 5000);
+    };
+
     // Game error
     const handleGameError = (message: string) => {
       setError(message);
@@ -260,7 +405,10 @@ export function useGame(lobbyId: string): UseGameReturn {
     socketService.on('game:winner', handleWinner);
     socketService.on('game:over', handleGameOver);
     socketService.on('game:error', handleGameError);
-  socketService.on('lobby:cancelled', handleLobbyCancelled);
+    socketService.on('lobby:cancelled', handleLobbyCancelled);
+    socketService.on('game:distributePrizes', handleDistributePrizes);
+    socketService.on('game:prizesDistributed', handlePrizesDistributed);
+    socketService.on('game:prizeError', handlePrizeError);
     // Nuevo: listener para lobby:updated
     const handleLobbyUpdated = (data: { lobbyId: string }) => {
       if (lobbyId && data.lobbyId === lobbyId) {
@@ -285,10 +433,13 @@ export function useGame(lobbyId: string): UseGameReturn {
       socketService.off('game:winner', handleWinner);
       socketService.off('game:over', handleGameOver);
       socketService.off('game:error', handleGameError);
-  socketService.off('lobby:cancelled', handleLobbyCancelled);
+      socketService.off('lobby:cancelled', handleLobbyCancelled);
       socketService.off('lobby:updated', handleLobbyUpdated);
+      socketService.off('game:distributePrizes', handleDistributePrizes);
+      socketService.off('game:prizesDistributed', handlePrizesDistributed);
+      socketService.off('game:prizeError', handlePrizeError);
     };
-  }, [session?.username, showGameMessage, lobbyId]);
+  }, [session?.username, showGameMessage, lobbyId, autoDistributePrizes]);
 
   // Acciones del juego
   const startGame = useCallback(() => {
@@ -377,6 +528,9 @@ export function useGame(lobbyId: string): UseGameReturn {
     drawCard,
     passTurn,
     chooseWildColor,
+    
+    // Premios (NEW in V2)
+    autoDistributePrizes,
     
     // Estados UI
     isLoading,
