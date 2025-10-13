@@ -20,7 +20,7 @@ import {
   sepolia,
 } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ronin, abstract } from './chains'
+import { ronin, roninSaigon, abstract } from './chains'
 import { BrowserRouter } from "react-router-dom";
 
 
@@ -31,7 +31,7 @@ const queryClient = new QueryClient()
 const config = getDefaultConfig({
   appName: 'Chain Table',
   projectId: 'f07abaf1c72667be12516c80f07650ff',
-  chains: [mainnet, polygon, optimism, arbitrum, base, sepolia, ronin, abstract],
+  chains: [mainnet, polygon, optimism, arbitrum, base, sepolia, ronin, roninSaigon, abstract],
   ssr: false,
 })
 

@@ -72,9 +72,31 @@ const Game: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-700 to-blue-800 p-4">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-lg shadow-xl p-6">
-            <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-              Lobby: {gameState.name}
-            </h1>
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-gray-800 text-center">
+                Lobby: {gameState.name}
+              </h1>
+              
+              {/* Mostrar costo de entrada si es lobby pago */}
+              {(gameState as any).type === 'pago' && (gameState as any).onchain && (
+                <div className="mt-3 text-center">
+                  <div className="inline-flex items-center space-x-2 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded-lg">
+                    <span className="text-xl">💰</span>
+                    <span className="font-semibold">
+                      Costo de entrada: {(() => {
+                        try {
+                          const weiValue = (gameState as any).entryCost || (gameState as any).onchain?.entryFee || '0';
+                          const ethValue = parseFloat(weiValue) / 1e18;
+                          return `${ethValue} ${(gameState as any).onchain?.token || 'ETH'}`;
+                        } catch (e) {
+                          return 'N/A';
+                        }
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Jugadores */}
             <div className="mb-6">

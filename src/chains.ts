@@ -23,6 +23,24 @@ export const ronin = {
   },
 } as const satisfies Chain
 
+// ⚡ Ronin Saigon Testnet
+export const roninSaigon = {
+  id: 2021,
+  name: 'Ronin Saigon Testnet',
+  nativeCurrency: {
+    name: 'Ronin',
+    symbol: 'RON',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: { http: ['https://saigon-testnet.roninchain.com/rpc'] },
+  },
+  blockExplorers: {
+    default: { name: 'Saigon Explorer', url: 'https://saigon-app.roninchain.com/' },
+  },
+  testnet: true,
+} as const satisfies Chain
+
 // ⚡ Abstract Mainnet
 export const abstract = {
   id: 2741,

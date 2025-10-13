@@ -48,21 +48,15 @@ const Lobbies: React.FC = () => {
   });
   // Estado adicional para lobbies pagos (modo, token y red)
   const [pagoMode, setPagoMode] = useState<'BEAST' | 'CLASSIC'>('BEAST');
-  const [pagoToken, setPagoToken] = useState<SupportedToken>('ETH');
-  const [pagoNetwork, setPagoNetwork] = useState<SupportedNetwork>('sepolia');
+  const [pagoToken, setPagoToken] = useState<SupportedToken>('RON'); // Changed from 'ETH' to 'RON' to match ronin-saigon default
+  const [pagoNetwork, setPagoNetwork] = useState<SupportedNetwork>('ronin-saigon');
 
 
   // Contract addresses per network (UnoLobbyV2)
   const CONTRACT_ADDRESSES: Record<string, string> = {
-    sepolia: '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B', // ✅ UnoLobbyV2
-    // keep existing networks blank for now
-    ronin: '',
-    ethereum: '',
-    base: '',
-    abstract: ''
-  };
-
-  // basic minimal ABI for createLobby and joinLobby
+    'sepolia': '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B',
+    'ronin-saigon': '0xc409F2C1fc07ABA9B6879D19Bf1ec74647c049e5', // UnoLobbyV2
+  };  // basic minimal ABI for createLobby and joinLobby
   const UNO_ABI = [
     'function createLobby(address token, uint256 entryFee, uint16 maxPlayers, uint8 mode) returns (uint256)',
     'function joinLobby(uint256 lobbyId) payable',
@@ -98,6 +92,34 @@ const Lobbies: React.FC = () => {
     setSuccessMessage('');
     setErrorMessage('');
   }, []);
+
+  // Función para añadir una red a MetaMask si no existe
+  const addNetworkToMetaMask = async (network: SupportedNetwork) => {
+    const networkConfig = NETWORK_CONFIGS[network];
+    const chainIdHex = '0x' + networkConfig.chainId.toString(16);
+    
+    try {
+      await (window as any).ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: chainIdHex,
+          chainName: networkConfig.name,
+          nativeCurrency: {
+            name: networkConfig.nativeCurrency.name,
+            symbol: networkConfig.nativeCurrency.symbol,
+            decimals: networkConfig.nativeCurrency.decimals
+          },
+          rpcUrls: [networkConfig.rpcUrl],
+          blockExplorerUrls: networkConfig.blockExplorer ? [networkConfig.blockExplorer] : undefined
+        }]
+      });
+      console.log(`✅ Red ${networkConfig.name} añadida a MetaMask`);
+      return true;
+    } catch (error: any) {
+      console.error('Error añadiendo red a MetaMask:', error);
+      throw new Error(`No se pudo añadir la red ${networkConfig.name}: ${error.message}`);
+    }
+  };
 
   // Cerrar sesión y desconectar wallet
   const handleLogout = useCallback(() => {
@@ -157,14 +179,14 @@ const Lobbies: React.FC = () => {
         }
       }
 
-      // If this is a paid lobby on Sepolia, perform an on-chain createLobby first (MetaMask will prompt)
-      if (type === 'pago' && pagoNetwork === 'sepolia') {
-        console.log('🔗 Initiating on-chain lobby creation...', { type, pagoNetwork, contractAddress: CONTRACT_ADDRESSES['sepolia'] });
+      // If this is a paid lobby with on-chain support, perform an on-chain createLobby first (MetaMask will prompt)
+      const contractAddress = CONTRACT_ADDRESSES[pagoNetwork];
+      if (type === 'pago' && contractAddress) {
+        console.log('🔗 Initiating on-chain lobby creation...', { type, pagoNetwork, contractAddress });
         if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error('No web3 provider (MetaMask) detected');
-        const contractAddress = CONTRACT_ADDRESSES['sepolia'];
-        if (!contractAddress) throw new Error('Contract address not configured for Sepolia');
+        if (!contractAddress) throw new Error(`Contract address not configured for ${pagoNetwork}`);
 
-        // Ensure MetaMask is connected and on Sepolia; get signer via ethers BrowserProvider
+        // Ensure MetaMask is connected; get signer via ethers BrowserProvider
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         
         // Request accounts to ensure MetaMask is unlocked and get current account
@@ -175,21 +197,39 @@ const Lobbies: React.FC = () => {
         const currentAccount = accounts[0];
         console.log('✅ Cuenta actual de MetaMask:', currentAccount);
         
-        // Try to switch the network to Sepolia (chainId 11155111 -> 0xaa36a7)
+        // Get network config and try to switch to the correct network
+        const networkConfig = NETWORK_CONFIGS[pagoNetwork];
+        const chainIdHex = '0x' + networkConfig.chainId.toString(16);
+        
         try {
-          await provider.send('wallet_switchEthereumChain', [{ chainId: '0xaa36a7' }]);
+          await provider.send('wallet_switchEthereumChain', [{ chainId: chainIdHex }]);
+          console.log(`✅ Switched to ${networkConfig.name} (Chain ID: ${networkConfig.chainId})`);
         } catch (switchError: any) {
-          // If the user rejected or the chain is not added, inform them to switch manually
-          console.warn('Network switch to Sepolia failed', switchError);
-          setErrorMessage('Por favor cambia tu red de MetaMask a Sepolia y reintenta (o agrega Sepolia a MetaMask).');
-          throw new Error('MetaMask network not Sepolia');
+          // Error code 4902: la red no está agregada a MetaMask
+          if (switchError.code === 4902) {
+            console.log(`⚠️ Red ${networkConfig.name} no encontrada, intentando agregarla...`);
+            try {
+              await addNetworkToMetaMask(pagoNetwork);
+              // Después de agregar, intentar cambiar de nuevo
+              await provider.send('wallet_switchEthereumChain', [{ chainId: chainIdHex }]);
+              console.log(`✅ Red ${networkConfig.name} agregada y activada`);
+            } catch (addError: any) {
+              console.error('Error agregando red:', addError);
+              setErrorMessage(`No se pudo agregar la red ${networkConfig.name}. Por favor agrégala manualmente.`);
+              throw new Error(`Failed to add network ${networkConfig.name}`);
+            }
+          } else {
+            // Usuario rechazó el cambio de red o error diferente
+            console.warn(`Network switch to ${networkConfig.name} failed`, switchError);
+            setErrorMessage(`Por favor cambia tu red de MetaMask a ${networkConfig.name} y reintenta.`);
+            throw new Error(`MetaMask network not ${networkConfig.name}`);
+          }
         }
         
         // Get signer AFTER switching network
         const signer = await provider.getSigner();
 
         // Obtener configuración del token seleccionado
-        const networkConfig = NETWORK_CONFIGS[pagoNetwork];
         const tokenConfig = networkConfig.supportedTokens.find(t => t.symbol === pagoToken);
         if (!tokenConfig) {
           throw new Error(`Token ${pagoToken} no soportado`);
@@ -299,8 +339,10 @@ const Lobbies: React.FC = () => {
           txHash: createReceipt?.hash || (createReceipt as any)?.transactionHash || createTx.hash,
           joinTxHash: joinReceipt?.hash || (joinReceipt as any)?.transactionHash || joinTx.hash,
           contract: contractAddress,
-          chain: 'sepolia',
-          lobbyId: onchainLobbyId
+          chain: pagoNetwork, // Use the selected network instead of hardcoded 'sepolia'
+          lobbyId: onchainLobbyId,
+          token: pagoToken, // Add token symbol for display
+          entryFee: entryFeeWei.toString() // Store entry fee in wei
         };
         // store entryCost in wei so server-side validation compares correctly
         (createLobbyData as any).entryCost = entryFeeWei.toString();
@@ -404,12 +446,19 @@ const Lobbies: React.FC = () => {
           } catch (e) { clearTimeout(timeout); reject(e); }
         });
 
-        // Ensure Sepolia native flow
-        if (!lobbyInfo.onchain || lobbyInfo.onchain.chain !== 'sepolia') {
-          throw new Error('Este lobby requiere pago on-chain en Sepolia. No se encontró metadata.');
+        // Ensure on-chain metadata exists
+        if (!lobbyInfo.onchain || !lobbyInfo.onchain.chain) {
+          throw new Error('Este lobby requiere pago on-chain. No se encontró metadata de la blockchain.');
         }
-        const contractAddress = lobbyInfo.onchain.contract;
-        if (!contractAddress) throw new Error('Dirección de contrato no disponible en el lobby');
+        
+        const lobbyChain = lobbyInfo.onchain.chain;
+        const contractAddress = lobbyInfo.onchain.contract || CONTRACT_ADDRESSES[lobbyChain];
+        
+        if (!contractAddress) {
+          throw new Error(`Dirección de contrato no disponible para la red ${lobbyChain}`);
+        }
+
+        console.log(`🔗 Uniéndose a lobby on-chain en ${lobbyChain}`, { contractAddress, lobbyInfo });
 
         // entryCost expected in wei string
         const entryCostWeiStr = String(lobbyInfo.entryCost || '0');
@@ -442,11 +491,36 @@ const Lobbies: React.FC = () => {
         const currentAccount = accounts[0];
         console.log('✅ Cuenta actual de MetaMask para unirse:', currentAccount);
         
+        // Get network config and switch to the correct network
+        const networkConfig = NETWORK_CONFIGS[lobbyChain as SupportedNetwork];
+        if (!networkConfig) {
+          throw new Error(`Red no soportada: ${lobbyChain}`);
+        }
+        
+        const chainIdHex = '0x' + networkConfig.chainId.toString(16);
+        
         try {
-          await provider.send('wallet_switchEthereumChain', [{ chainId: '0xaa36a7' }]);
+          await provider.send('wallet_switchEthereumChain', [{ chainId: chainIdHex }]);
+          console.log(`✅ Switched to ${networkConfig.name} (Chain ID: ${networkConfig.chainId})`);
         } catch (switchError: any) {
-          setErrorMessage('Por favor cambia tu red de MetaMask a Sepolia y reintenta (o agrega Sepolia a MetaMask).');
-          throw new Error('MetaMask network not Sepolia');
+          // Error code 4902: la red no está agregada a MetaMask
+          if (switchError.code === 4902) {
+            console.log(`⚠️ Red ${networkConfig.name} no encontrada, intentando agregarla...`);
+            try {
+              await addNetworkToMetaMask(lobbyChain as SupportedNetwork);
+              // Después de agregar, intentar cambiar de nuevo
+              await provider.send('wallet_switchEthereumChain', [{ chainId: chainIdHex }]);
+              console.log(`✅ Red ${networkConfig.name} agregada y activada`);
+            } catch (addError: any) {
+              console.error('Error agregando red:', addError);
+              setErrorMessage(`No se pudo agregar la red ${networkConfig.name}. Por favor agrégala manualmente.`);
+              throw new Error(`Failed to add network ${networkConfig.name}`);
+            }
+          } else {
+            // Usuario rechazó el cambio de red o error diferente
+            setErrorMessage(`Por favor cambia tu red de MetaMask a ${networkConfig.name} y reintenta.`);
+            throw new Error(`MetaMask network not ${networkConfig.name}`);
+          }
         }
         
         // Get signer AFTER switching network
@@ -840,8 +914,25 @@ const Lobbies: React.FC = () => {
                                lobby.type === 'privado' ? 'Privado' : 'Pago'}
                             </span>
                           </div>
-                          <div className="text-gray-400 text-sm">
-                            Jugadores: {lobby.playerCount}/{lobby.maxPlayers}
+                          <div className="text-gray-400 text-sm space-y-1">
+                            <div>Jugadores: {lobby.playerCount}/{lobby.maxPlayers}</div>
+                            {lobby.type === 'pago' && lobby.onchain && (
+                              <div className="flex items-center space-x-1 text-yellow-400 font-semibold">
+                                <span>💰</span>
+                                <span>
+                                  {(() => {
+                                    try {
+                                      // entryCost está en wei, convertir a ETH
+                                      const weiValue = lobby.entryCost || lobby.onchain.entryFee || '0';
+                                      const ethValue = parseFloat(weiValue) / 1e18;
+                                      return `${ethValue} ${lobby.onchain.token || 'ETH'}`;
+                                    } catch (e) {
+                                      return 'N/A';
+                                    }
+                                  })()}
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-3">
                             <button 
@@ -881,8 +972,25 @@ const Lobbies: React.FC = () => {
                                lobby.type === 'privado' ? 'Privado' : 'Pago'}
                             </span>
                           </div>
-                          <div className="text-gray-400 text-sm">
-                            Jugadores: {lobby.playerCount}
+                          <div className="text-gray-400 text-sm space-y-1">
+                            <div>Jugadores: {lobby.playerCount}</div>
+                            {lobby.type === 'pago' && lobby.onchain && (
+                              <div className="flex items-center space-x-1 text-yellow-400 font-semibold">
+                                <span>💰</span>
+                                <span>
+                                  {(() => {
+                                    try {
+                                      // entryCost está en wei, convertir a ETH
+                                      const weiValue = lobby.entryCost || lobby.onchain.entryFee || '0';
+                                      const ethValue = parseFloat(weiValue) / 1e18;
+                                      return `${ethValue} ${lobby.onchain.token || 'ETH'}`;
+                                    } catch (e) {
+                                      return 'N/A';
+                                    }
+                                  })()}
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-3">
                             <button disabled className="w-full bg-gray-600 text-gray-400 font-bold py-2 px-4 rounded cursor-not-allowed">

@@ -48,13 +48,14 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     setIsConnected(false);
   };
 
-  // Conectar automáticamente si hay sesión
+  // Conectar automáticamente si hay sesión (solo una vez al montar)
   useEffect(() => {
     const session = getUserSession();
-    if (session && !isConnected) {
+    if (session) {
       connect();
     }
-  }, [isConnected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Solo ejecutar al montar el componente
 
   // Listener para estado de conexión
   useEffect(() => {
@@ -62,21 +63,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       console.log('🟢 Socket conectado');
       setIsConnected(true);
       setError(null);
-        try {
-          // Si hay sesión y un lobby activo guardado, notificamos al servidor
-          const session = getUserSession();
-          const activeLobbyId = typeof window !== 'undefined' ? localStorage.getItem('activeLobbyId') : null;
-          if (session && activeLobbyId) {
-            console.log('🔄 Emitting lobby:reconnect from SocketProvider', { lobbyId: activeLobbyId, userId: session.id });
-            socketService.emit('lobby:reconnect', { lobbyId: activeLobbyId, userId: session.id });
-            // solicitar info del lobby tras corto delay
-            setTimeout(() => {
-              try { socketService.getLobbyInfo(activeLobbyId); } catch (e) {}
-            }, 200);
-          }
-        } catch (e) {
-          // no-op
-        }
+      // NOTE: lobby reconnection logic is handled by useGame hook
+      // to avoid duplicate reconnection attempts from multiple places
     };
 
     const handleDisconnect = () => {

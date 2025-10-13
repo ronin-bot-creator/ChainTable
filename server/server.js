@@ -10,20 +10,45 @@ require('dotenv').config({ path: '../.env' });
 // Luego cargar contractService (que usa process.env)
 const contractService = require('./contractService');
 
+// Initialize RPC providers for different networks
 const RPC_SEPOLIA = process.env.RPC_URL_SEPOLIA || process.env.RPC_URL || '';
-let sepoliaProvider = null;
+const RPC_RONIN_SAIGON = process.env.RPC_URL_RONIN_TESTNET || '';
 
+let sepoliaProvider = null;
+let roninSaigonProvider = null;
+
+// Sepolia provider
 if (RPC_SEPOLIA && RPC_SEPOLIA.length > 0) {
   sepoliaProvider = new ethers.JsonRpcProvider(RPC_SEPOLIA);
-  console.log('Using RPC_SEPOLIA provider from env');
+  console.log('✅ Using RPC_SEPOLIA provider from env');
 } else {
   // fallback to public Sepolia RPC
   try {
     sepoliaProvider = new ethers.JsonRpcProvider('https://rpc.sepolia.org');
-    console.warn('RPC_URL_SEPOLIA not configured, using public Sepolia RPC (may be rate limited).');
+    console.warn('⚠️  RPC_URL_SEPOLIA not configured, using public Sepolia RPC (may be rate limited).');
   } catch (e) {
-    console.warn('Could not create fallback Sepolia provider:', e);
+    console.warn('❌ Could not create fallback Sepolia provider:', e);
     sepoliaProvider = null;
+  }
+}
+
+// Ronin Saigon provider
+if (RPC_RONIN_SAIGON && RPC_RONIN_SAIGON.length > 0) {
+  roninSaigonProvider = new ethers.JsonRpcProvider(RPC_RONIN_SAIGON);
+  console.log('✅ Using RPC_RONIN_SAIGON provider from env');
+} else {
+  console.warn('⚠️  RPC_URL_RONIN_TESTNET not configured, Ronin Saigon validation disabled');
+}
+
+// Helper to get provider by chain name
+function getProviderForChain(chain) {
+  switch(chain) {
+    case 'sepolia':
+      return sepoliaProvider;
+    case 'ronin-saigon':
+      return roninSaigonProvider;
+    default:
+      return null;
   }
 }
 
@@ -68,6 +93,8 @@ class UnoGame {
     // CRITICAL: Incluir información del lobby para auto-distribución de premios
     this.type = lobbyData.type; // 'gratuito' | 'pago'
     this.onchainLobbyId = lobbyData.onchainLobbyId; // ID del lobby en el contrato
+    this.onchain = lobbyData.onchain; // Objeto completo con contract, chain, token, etc.
+    this.entryCost = lobbyData.entryCost; // Costo de entrada (para referencia)
 
     this.shuffleDeck();
     this.dealInitialCards();
@@ -281,9 +308,24 @@ class LobbyManager {
     const inGame = [];
     for (const lobby of this.lobbies.values()) {
       if (lobby.status === 'waiting' || lobby.status === 'starting') {
-        waitingForPlayers.push({ id: lobby.id, name: lobby.name, type: lobby.type, currentPlayers: lobby.players.length, maxPlayers: lobby.maxPlayers });
+        waitingForPlayers.push({ 
+          id: lobby.id, 
+          name: lobby.name, 
+          type: lobby.type, 
+          currentPlayers: lobby.players.length, 
+          maxPlayers: lobby.maxPlayers,
+          ...(lobby.onchain && { onchain: lobby.onchain }),
+          ...(lobby.entryCost && { entryCost: lobby.entryCost })
+        });
       } else if (lobby.status === 'in-progress') {
-        inGame.push({ id: lobby.id, name: lobby.name, type: lobby.type, players: lobby.players.length });
+        inGame.push({ 
+          id: lobby.id, 
+          name: lobby.name, 
+          type: lobby.type, 
+          players: lobby.players.length,
+          ...(lobby.onchain && { onchain: lobby.onchain }),
+          ...(lobby.entryCost && { entryCost: lobby.entryCost })
+        });
       }
     }
     return { waitingForPlayers, inGame };
@@ -299,7 +341,9 @@ class LobbyManager {
     // CRITICAL: Pasar información del lobby al juego para auto-distribución de premios
     const lobbyData = {
       type: lobby.type,
-      onchainLobbyId: lobby.onchain?.lobbyId || lobby.onchainLobbyId
+      onchainLobbyId: lobby.onchain?.lobbyId || lobby.onchainLobbyId,
+      onchain: lobby.onchain, // Pass the complete onchain object with contract, chain, token, etc.
+      entryCost: lobby.entryCost
     };
     
     const game = new UnoGame(lobbyId, lobby.players, lobbyData);
@@ -531,49 +575,54 @@ io.on('connection', (socket) => {
       io.to(result.lobby.id).emit('lobbyUpdate', { lobbyId: result.lobby.id });
     }
 
-    // If onchain metadata provided for Sepolia, try to resolve on-chain lobbyId from receipt and store it
-    if (data.onchain && data.onchain.chain === 'sepolia' && data.onchain.txHash && sepoliaProvider) {
-      (async () => {
-        try {
-          const txHash = data.onchain.txHash;
-          console.log('Resolving on-chain lobbyId for tx', txHash);
-          let receipt = null;
+    // If onchain metadata provided, try to resolve on-chain lobbyId from receipt and store it
+    if (data.onchain && data.onchain.chain && data.onchain.txHash) {
+      const provider = getProviderForChain(data.onchain.chain);
+      if (!provider) {
+        console.warn(`⚠️  No provider available for chain: ${data.onchain.chain}, skipping on-chain resolution`);
+      } else {
+        (async () => {
           try {
-            receipt = await sepoliaProvider.waitForTransaction(txHash, 1, 60000);
-          } catch (e) {
-            try { receipt = await sepoliaProvider.getTransactionReceipt(txHash); } catch (e2) { receipt = null; }
-          }
-          if (!receipt) { console.warn('Could not obtain receipt for createLobby tx', txHash); return; }
-          if (receipt.status === 0) { console.warn('createLobby tx reverted', txHash); return; }
-
-          // parse logs looking for LobbyCreated
-          const iface = new ethers.Interface(['event LobbyCreated(uint256 indexed lobbyId, address indexed creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode)']);
-          for (const log of receipt.logs) {
+            const txHash = data.onchain.txHash;
+            console.log(`Resolving on-chain lobbyId for tx ${txHash} on ${data.onchain.chain}`);
+            let receipt = null;
             try {
-              const parsed = iface.parseLog(log);
-              if (parsed && parsed.name === 'LobbyCreated') {
-                const onchainLobbyId = parsed.args?.lobbyId?.toString?.() || null;
-                if (onchainLobbyId) {
-                  const serverLobby = lobbyManager.lobbies.get(result.lobby.id);
-                  if (serverLobby) {
-                    // Guardar en ambos lugares para compatibilidad
-                    serverLobby.onchainLobbyId = Number(onchainLobbyId);
-                    serverLobby.onchain = serverLobby.onchain || {};
-                    serverLobby.onchain.lobbyId = onchainLobbyId;
-                    console.log('✅ Stored onchainLobbyId for server lobby', result.lobby.id, '→', onchainLobbyId);
-                    io.to(result.lobby.id).emit('lobby:updated', { lobbyId: result.lobby.id });
-                  }
-                }
-                break;
-              }
+              receipt = await provider.waitForTransaction(txHash, 1, 60000);
             } catch (e) {
-              // non-matching log
+              try { receipt = await provider.getTransactionReceipt(txHash); } catch (e2) { receipt = null; }
             }
+            if (!receipt) { console.warn('Could not obtain receipt for createLobby tx', txHash); return; }
+            if (receipt.status === 0) { console.warn('createLobby tx reverted', txHash); return; }
+
+            // parse logs looking for LobbyCreated
+            const iface = new ethers.Interface(['event LobbyCreated(uint256 indexed lobbyId, address indexed creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode)']);
+            for (const log of receipt.logs) {
+              try {
+                const parsed = iface.parseLog(log);
+                if (parsed && parsed.name === 'LobbyCreated') {
+                  const onchainLobbyId = parsed.args?.lobbyId?.toString?.() || null;
+                  if (onchainLobbyId) {
+                    const serverLobby = lobbyManager.lobbies.get(result.lobby.id);
+                    if (serverLobby) {
+                      // Guardar en ambos lugares para compatibilidad
+                      serverLobby.onchainLobbyId = Number(onchainLobbyId);
+                      serverLobby.onchain = serverLobby.onchain || {};
+                      serverLobby.onchain.lobbyId = onchainLobbyId;
+                      console.log('✅ Stored onchainLobbyId for server lobby', result.lobby.id, '→', onchainLobbyId);
+                      io.to(result.lobby.id).emit('lobby:updated', { lobbyId: result.lobby.id });
+                    }
+                  }
+                  break;
+                }
+              } catch (e) {
+                // non-matching log
+              }
+            }
+          } catch (e) {
+            console.error('Error resolving onchain lobbyId for create', e);
           }
-        } catch (e) {
-          console.error('Error resolving onchain lobbyId for create', e);
-        }
-      })();
+        })();
+      }
     }
   });
 

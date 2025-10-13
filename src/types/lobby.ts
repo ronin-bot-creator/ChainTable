@@ -3,10 +3,10 @@ export type LobbyType = 'publico' | 'privado' | 'pago';
 export type LobbyStatus = 'waiting' | 'starting' | 'in-progress' | 'finished' | 'cancelled';
 
 // Redes blockchain soportadas
-export type SupportedNetwork = 'abstract' | 'base' | 'ethereum' | 'ronin' | 'sepolia';
+export type SupportedNetwork = 'abstract' | 'base' | 'ethereum' | 'ronin' | 'ronin-saigon' | 'sepolia';
 
 // Monedas soportadas por red
-export type SupportedToken = 'ETH' | 'RON' | 'RONKE';
+export type SupportedToken = 'ETH' | 'RON' | 'RICE' | 'RONKE';
 
 // Configuración de tokens por red
 export interface TokenConfig {
@@ -99,10 +99,46 @@ export const NETWORK_CONFIGS: Record<SupportedNetwork, NetworkConfig> = {
         decimals: 18
       },
       {
+        symbol: 'RICE',
+        name: 'Rice Token',
+        decimals: 18,
+        address: '0x' // TODO: Agregar dirección real del token RICE en mainnet
+      },
+      {
         symbol: 'RONKE',
         name: 'Ronke Token',
         decimals: 18,
-        address: '0x' // TODO: Agregar dirección real del token RONKE
+        address: '0x' // TODO: Agregar dirección real del token RONKE en mainnet
+      }
+    ]
+  },
+  'ronin-saigon': {
+    name: 'Ronin Saigon Testnet',
+    chainId: 2021,
+    rpcUrl: 'https://saigon-testnet.roninchain.com/rpc',
+    blockExplorer: 'https://saigon-app.roninchain.com',
+    nativeCurrency: {
+      symbol: 'RON',
+      name: 'Ronin',
+      decimals: 18
+    },
+    supportedTokens: [
+      {
+        symbol: 'RON',
+        name: 'Ronin',
+        decimals: 18
+      },
+      {
+        symbol: 'RICE',
+        name: 'Rice Token',
+        decimals: 18,
+        address: '0x' // TODO: Agregar dirección real del token RICE en Saigon
+      },
+      {
+        symbol: 'RONKE',
+        name: 'Ronke Token',
+        decimals: 18,
+        address: '0x' // TODO: Agregar dirección real del token RONKE en Saigon
       }
     ]
   },

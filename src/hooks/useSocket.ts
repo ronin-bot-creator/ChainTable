@@ -279,21 +279,25 @@ export const useSocket = (): UseSocketReturn => {
     }) => {
       // Convertir la data del servidor al formato esperado por el componente
       const lobbiesList = [
-        ...data.waitingForPlayers.map(lobby => ({
+        ...data.waitingForPlayers.map((lobby: any) => ({
           id: lobby.id,
           name: lobby.name,
           type: lobby.type,
           status: 'Esperando jugadores',
           playerCount: lobby.currentPlayers,
-          maxPlayers: lobby.maxPlayers
+          maxPlayers: lobby.maxPlayers,
+          ...(lobby.onchain && { onchain: lobby.onchain }),
+          ...(lobby.entryCost && { entryCost: lobby.entryCost })
         })),
-        ...data.inGame.map(lobby => ({
+        ...data.inGame.map((lobby: any) => ({
           id: lobby.id,
           name: lobby.name,
           type: lobby.type,
           status: 'En partida',
           playerCount: lobby.players,
-          maxPlayers: lobby.players
+          maxPlayers: lobby.players,
+          ...(lobby.onchain && { onchain: lobby.onchain }),
+          ...(lobby.entryCost && { entryCost: lobby.entryCost })
         }))
       ];
 

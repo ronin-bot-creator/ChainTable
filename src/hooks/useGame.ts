@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { GameState, Card, GameUpdateData, Winner, WildColor } from '../types/game';
 import { socketService } from '../services/socketService';
@@ -48,6 +48,9 @@ export function useGame(lobbyId: string): UseGameReturn {
 
   // Obtener sesión actual
   const session = getUserSession();
+  
+  // Ref para mantener la última versión de autoDistributePrizes sin causar re-renders
+  const autoDistributePrizesRef = useRef<((winnerAddresses: string[]) => Promise<any>) | null>(null);
   const mySessionId = session?.id || '';
   const mySocketId = socketService.socket_instance?.id || '';
 
@@ -141,6 +144,9 @@ export function useGame(lobbyId: string): UseGameReturn {
     console.log('🎁 [AUTO-DISTRIBUTE] Iniciando auto-distribución de premios');
     console.log('   📌 Winners:', winnerAddresses);
     console.log('   📌 Game State:', gameState);
+    console.log('🔍 DEBUG - gameState completo:', JSON.stringify(gameState, null, 2));
+    console.log('🔍 DEBUG - gameState.onchain:', (gameState as any).onchain);
+    console.log('🔍 DEBUG - gameState.onchainLobbyId:', (gameState as any).onchainLobbyId);
     
     try {
       // Verificar si es un lobby de pago
@@ -156,7 +162,33 @@ export function useGame(lobbyId: string): UseGameReturn {
         return;
       }
 
+      // Obtener la dirección del contrato desde el gameState
+      let contractAddress = (gameState as any).onchain?.contract;
+      const chain = (gameState as any).onchain?.chain;
+      
+      console.log('🔍 DEBUG - contractAddress extraído:', contractAddress);
+      console.log('🔍 DEBUG - chain extraído:', chain);
+      
+      // Fallback: Si no hay contract address pero hay chain, usar direcciones configuradas
+      if (!contractAddress && chain) {
+        const CONTRACT_ADDRESSES: Record<string, string> = {
+          'sepolia': '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B',
+          'ronin-saigon': '0x45cE17CAD7eb69b186E3053d15bccc8E7dF1A2F2',
+        };
+        contractAddress = CONTRACT_ADDRESSES[chain];
+        console.log('⚠️ Using fallback contract address for', chain, ':', contractAddress);
+      }
+      
+      if (!contractAddress) {
+        console.error('❌ No se encontró dirección del contrato');
+        console.error('🔍 DEBUG - gameState keys:', Object.keys(gameState || {}));
+        showGameMessage('❌ No se puede distribuir: Contrato no disponible', 3000);
+        return;
+      }
+
       console.log('   📌 On-chain Lobby ID:', onchainLobbyId);
+      console.log('   📌 Contract Address:', contractAddress);
+      console.log('   📌 Chain:', chain);
 
       // Importar dinámicamente ethers
       const { ethers } = await import('ethers');
@@ -179,14 +211,20 @@ export function useGame(lobbyId: string): UseGameReturn {
         'function isPlayerInLobby(uint256 lobbyId, address player) external view returns (bool)'
       ];
       
-      const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS_SEPOLIA || '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B';
       const contract = new ethers.Contract(contractAddress, contractABI, signer);
       
       console.log('📝 Contrato V2:', contractAddress);
       
       // Verificar que el usuario sea un jugador del lobby (V2 feature)
-      const isPlayer = await contract.isPlayerInLobby(onchainLobbyId, userAddress);
-      console.log('   🎮 Is player in lobby:', isPlayer);
+      let isPlayer = false;
+      try {
+        isPlayer = await contract.isPlayerInLobby(onchainLobbyId, userAddress);
+        console.log('   🎮 Is player in lobby:', isPlayer);
+      } catch (checkError: any) {
+        console.warn('⚠️ No se pudo verificar si es jugador (puede ser versión V1 del contrato):', checkError.message);
+        // Continuar de todas formas - en V1 no existe esta función
+        isPlayer = true;
+      }
       
       if (!isPlayer) {
         console.log('⚠️ Usuario no es jugador del lobby, no puede distribuir premios');
@@ -236,6 +274,11 @@ export function useGame(lobbyId: string): UseGameReturn {
       throw error;
     }
   }, [gameState, lobbyId, showGameMessage]);
+  
+  // Mantener la ref actualizada con la última versión de autoDistributePrizes
+  useEffect(() => {
+    autoDistributePrizesRef.current = autoDistributePrizes;
+  }, [autoDistributePrizes]);
 
   // Inicializar listeners de Socket.IO
   useEffect(() => {
@@ -365,8 +408,12 @@ export function useGame(lobbyId: string): UseGameReturn {
       console.log('   📌 Winners:', data.winners);
       console.log('   📌 Mode:', data.mode);
       
-      // Delegar a autoDistributePrizes para evitar código duplicado
-      await autoDistributePrizes(data.winners);
+      // Usar la ref para obtener la versión más reciente de autoDistributePrizes
+      if (autoDistributePrizesRef.current) {
+        await autoDistributePrizesRef.current(data.winners);
+      } else {
+        console.warn('⚠️ autoDistributePrizes no está disponible todavía');
+      }
     };
 
     const handlePrizesDistributed = (data: { success: boolean; txHash: string; message: string }) => {
@@ -439,7 +486,11 @@ export function useGame(lobbyId: string): UseGameReturn {
       socketService.off('game:prizesDistributed', handlePrizesDistributed);
       socketService.off('game:prizeError', handlePrizeError);
     };
-  }, [session?.username, showGameMessage, lobbyId, autoDistributePrizes]);
+    // NOTE: showGameMessage and autoDistributePrizes are intentionally NOT in dependencies
+    // because they are stable callbacks that don't change, and including them would cause
+    // re-registering listeners on every render which causes performance issues and flickering
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.username, lobbyId]);
 
   // Acciones del juego
   const startGame = useCallback(() => {
