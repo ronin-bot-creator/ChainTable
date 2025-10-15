@@ -134,7 +134,7 @@ contract UnoLobbyV2 is Ownable, ReentrancyGuard {
         uint8 mode
     ) external returns (uint256) {
         if (entryFee == 0) revert InvalidEntryFee();
-        if (maxPlayers < 2 || maxPlayers > 4) revert InvalidMaxPlayers();
+        if (maxPlayers < 2 || maxPlayers > 8) revert InvalidMaxPlayers(); // Cambiado de 4 a 8
         if (mode > 1) revert("Invalid payment mode");
 
         uint256 lobbyId = ++lobbyCount;

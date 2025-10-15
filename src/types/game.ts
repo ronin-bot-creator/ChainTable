@@ -50,6 +50,19 @@ export interface GameState {
   // Resultados
   winners: Winner[];
   finishedIds: Set<string>;
+  
+  // On-chain metadata (para lobbies pagos)
+  type?: 'gratis' | 'publico' | 'privado' | 'pago';
+  onchain?: {
+    chain: 'sepolia' | 'ronin' | 'ronin-saigon';
+    contract: string;
+    lobbyId: number;
+    token?: string;
+    entryFee?: string;
+    txHash?: string;
+    joinTxHash?: string;
+  };
+  onchainLobbyId?: number;
 }
 
 // Eventos WebSocket del juego

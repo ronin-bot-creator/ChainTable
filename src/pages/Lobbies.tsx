@@ -8,6 +8,11 @@ import { useSocket } from '../hooks/useSocket';
 import { socketService } from '../services/socketService';
 import { getUserId, getUserSession, clearUserSession } from '../utils/userSession';
 
+// Importar imágenes de tokens
+import ronIcon from '../assets/tokens/ron.png';
+import riceIcon from '../assets/tokens/rice.png';
+import ronkeIcon from '../assets/tokens/ronke.png';
+
 // Interfaz local para los formularios
 interface LobbyFormData {
   name: string;
@@ -48,20 +53,37 @@ const Lobbies: React.FC = () => {
   });
   // Estado adicional para lobbies pagos (modo, token y red)
   const [pagoMode, setPagoMode] = useState<'BEAST' | 'CLASSIC'>('BEAST');
-  const [pagoToken, setPagoToken] = useState<SupportedToken>('RON'); // Changed from 'ETH' to 'RON' to match ronin-saigon default
-  const [pagoNetwork, setPagoNetwork] = useState<SupportedNetwork>('ronin-saigon');
+  const [pagoToken, setPagoToken] = useState<SupportedToken>('RON');
+  const [pagoNetwork, setPagoNetwork] = useState<SupportedNetwork>('ronin'); // Changed to ronin mainnet
 
 
-  // Contract addresses per network (UnoLobbyV2)
+  // Contract addresses per network (UnoLobbyV2 - Max 8 players - Nueva wallet segura)
   const CONTRACT_ADDRESSES: Record<string, string> = {
-    'sepolia': '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B',
-    'ronin-saigon': '0xc409F2C1fc07ABA9B6879D19Bf1ec74647c049e5', // UnoLobbyV2
+    'sepolia': '0x640b9985a069782a662286D86CcD2681d2A35AD1',
+    'ronin-saigon': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
+    'ronin': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
   };  // basic minimal ABI for createLobby and joinLobby
   const UNO_ABI = [
     'function createLobby(address token, uint256 entryFee, uint16 maxPlayers, uint8 mode) returns (uint256)',
     'function joinLobby(uint256 lobbyId) payable',
     'event LobbyCreated(uint256 indexed lobbyId, address indexed creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode)'
   ];
+
+  // Helper para obtener el icono del token
+  const getTokenIcon = (tokenSymbol: SupportedToken): string => {
+    switch(tokenSymbol) {
+      case 'RON':
+        return ronIcon;
+      case 'RICE':
+        return riceIcon;
+      case 'RONKE':
+        return ronkeIcon;
+      case 'ETH':
+        return '⟠'; // Ethereum (emoji como fallback)
+      default:
+        return '💰';
+    }
+  };
 
   // Cargar información del usuario desde la sesión y verificar wallet
   useEffect(() => {
@@ -315,17 +337,50 @@ const Lobbies: React.FC = () => {
           throw new Error('No se pudo obtener el lobby ID del evento LobbyCreated');
         }
         
-        // Paso 2: Auto-join del creador
-        setSuccessMessage(`Paso 2/2: Uniéndose al lobby #${onchainLobbyId}...`);
+        // Paso 2: Aprobar token ERC20 si es necesario
+        const isNativeToken = tokenAddr === '0x0000000000000000000000000000000000000000';
+        
+        if (!isNativeToken) {
+          // Token ERC20: necesita aprobación antes de joinLobby
+          setSuccessMessage(`Paso 2/3: Aprobando ${pagoToken}...`);
+          console.log('🪙 Aprobando token ERC20:', pagoToken, 'en dirección:', tokenAddr);
+          
+          // ABI mínimo para ERC20 approve
+          const ERC20_ABI = [
+            'function approve(address spender, uint256 amount) returns (bool)',
+            'function allowance(address owner, address spender) view returns (uint256)'
+          ];
+          
+          const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+          
+          // Verificar si ya hay allowance suficiente
+          const currentAllowance = await tokenContract.allowance(signerAddress, contractAddress);
+          console.log('💰 Allowance actual:', currentAllowance.toString());
+          
+          if (currentAllowance < entryFeeWei) {
+            console.log('📝 Enviando transacción approve...');
+            const approveTx = await tokenContract.approve(contractAddress, entryFeeWei);
+            console.log('📝 Transacción approve enviada:', approveTx.hash);
+            
+            const approveReceipt = await approveTx.wait();
+            console.log('✅ Token aprobado');
+          } else {
+            console.log('✅ Allowance ya suficiente, saltando approve');
+          }
+        }
+        
+        // Paso 3: Auto-join del creador
+        const stepNum = isNativeToken ? '2/2' : '3/3';
+        setSuccessMessage(`Paso ${stepNum}: Uniéndose al lobby #${onchainLobbyId}...`);
         console.log('🎮 Creador uniéndose al lobby on-chain...');
         console.log('💰 Entry fee:', {
           entryFeeWei: entryFeeWei.toString() + ' wei',
-          entryFeeETH: ethers.formatEther(entryFeeWei) + ' ETH'
+          entryFeeETH: ethers.formatEther(entryFeeWei) + ' ' + pagoToken
         });
         
-        console.log('📝 Enviando transacción joinLobby (auto-join) con value:', entryFeeWei.toString());
+        console.log('📝 Enviando transacción joinLobby (auto-join)...');
         const joinTx = await contract.joinLobby(onchainLobbyId, {
-          value: entryFeeWei // Pagar el entry fee
+          value: isNativeToken ? entryFeeWei : 0 // Solo pagar value si es token nativo
         });
         console.log('📝 Transacción joinLobby enviada:', joinTx.hash);
         
@@ -541,18 +596,225 @@ const Lobbies: React.FC = () => {
           throw new Error('Este lobby no tiene un ID on-chain válido. No puedes unirte a este lobby.');
         }
 
+        // Verificar estado del lobby on-chain antes de intentar unirse
+        const contract = new ethers.Contract(contractAddress, UNO_ABI, signer);
+        
+        try {
+          // ABI para getLobby
+          const LOBBY_VIEW_ABI = [
+            'function lobbies(uint256) view returns (address creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode, uint8 state)',
+            'function getLobbyPlayers(uint256 lobbyId) view returns (address[] memory)'
+          ];
+          const viewContract = new ethers.Contract(contractAddress, LOBBY_VIEW_ABI, signer);
+          
+          const lobbyData = await viewContract.lobbies(onchainLobbyId);
+          const lobbyPlayers = await viewContract.getLobbyPlayers(onchainLobbyId);
+          
+          console.log('📊 Estado del lobby on-chain:', {
+            lobbyId: onchainLobbyId,
+            creator: lobbyData.creator,
+            token: lobbyData.token,
+            entryFee: lobbyData.entryFee.toString(),
+            maxPlayers: lobbyData.maxPlayers,
+            currentPlayers: lobbyPlayers.length,
+            state: lobbyData.state,
+            players: lobbyPlayers
+          });
+          
+          // Verificar si el lobby está lleno
+          if (lobbyPlayers.length >= lobbyData.maxPlayers) {
+            throw new Error(`Este lobby ya está lleno (${lobbyPlayers.length}/${lobbyData.maxPlayers} jugadores)`);
+          }
+          
+          // Verificar si ya estás en el lobby
+          const alreadyJoined = lobbyPlayers.some((p: string) => p.toLowerCase() === signerAddress.toLowerCase());
+          if (alreadyJoined) {
+            throw new Error('Ya estás unido a este lobby');
+          }
+          
+        } catch (error: any) {
+          console.error('❌ Error verificando estado del lobby:', error);
+          if (error.message.includes('lleno') || error.message.includes('unido')) {
+            throw error; // Re-lanzar errores de validación
+          }
+          // Si no podemos verificar el estado, continuar pero advertir
+          console.warn('⚠️ No se pudo verificar el estado del lobby, continuando...');
+        }
+
+        // Obtener información del token usado en el lobby DIRECTAMENTE DEL CONTRATO
+        // NO confiar en lobbyInfo.paymentConfig porque puede no estar sincronizado
+        const LOBBY_VIEW_ABI = [
+          'function lobbies(uint256) view returns (address creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode, uint8 state)'
+        ];
+        const viewContract = new ethers.Contract(contractAddress, LOBBY_VIEW_ABI, signer);
+        const lobbyDataOnChain = await viewContract.lobbies(onchainLobbyId);
+        
+        const tokenAddr = lobbyDataOnChain.token; // Obtener token address del contrato
+        const isNativeToken = tokenAddr === '0x0000000000000000000000000000000000000000';
+        const lobbyToken = lobbyInfo.onchain?.token || (isNativeToken ? 'RON' : 'ERC20'); // Token símbolo
+        
+        console.log('🔍 Token info obtenida del contrato:', {
+          tokenAddress: tokenAddr,
+          isNative: isNativeToken,
+          symbol: lobbyToken
+        });
+        
         console.log('💰 Uniéndose al lobby on-chain:', {
           lobbyId: onchainLobbyId,
-          entryFee: ethers.formatEther(entryFeeWei) + ' ETH',
+          token: lobbyToken,
+          tokenAddress: tokenAddr,
+          isNative: isNativeToken,
+          entryFee: ethers.formatEther(entryFeeWei) + ' ' + lobbyToken,
           entryFeeWei: entryFeeWei.toString() + ' wei',
           contractAddress
         });
 
-        // Llamar a joinLobby del contrato (NO solo enviar ETH)
-        const contract = new ethers.Contract(contractAddress, UNO_ABI, signer);
+        // Si es token ERC20, aprobar primero
+        if (!isNativeToken) {
+          setSuccessMessage(`Aprobando ${lobbyToken}...`);
+          console.log('🪙 Aprobando token ERC20:', lobbyToken, 'en dirección:', tokenAddr);
+          
+          // ABI mínimo para ERC20 approve
+          const ERC20_ABI = [
+            'function approve(address spender, uint256 amount) returns (bool)',
+            'function allowance(address owner, address spender) view returns (uint256)'
+          ];
+          
+          const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+          
+          // Verificar si ya hay allowance suficiente
+          const currentAllowance = await tokenContract.allowance(signerAddress, contractAddress);
+          console.log('💰 Allowance actual:', currentAllowance.toString());
+          
+          if (currentAllowance < entryFeeWei) {
+            console.log('📝 Enviando transacción approve...');
+            const approveTx = await tokenContract.approve(contractAddress, entryFeeWei);
+            console.log('📝 Transacción approve enviada:', approveTx.hash);
+            
+            setSuccessMessage('Aprobación enviada. Esperando confirmación...');
+            const approveReceipt = await approveTx.wait();
+            console.log('✅ Token aprobado');
+            setSuccessMessage('Token aprobado. Uniéndose al lobby...');
+          } else {
+            console.log('✅ Allowance ya suficiente, saltando approve');
+            setSuccessMessage('Uniéndose al lobby...');
+          }
+        } else {
+          setSuccessMessage('Uniéndose al lobby...');
+        }
+
+        // 🔍 DEBUGGING PROFUNDO antes de joinLobby
+        console.log('🔍 ==================== DEBUGGING PROFUNDO ====================');
+        try {
+          // Obtener estado del lobby on-chain justo antes de unirse
+          const LOBBY_STATE_ABI = [
+            'function getLobbyPlayers(uint256 lobbyId) view returns (address[] memory)',
+            'function isPlayerInLobby(uint256 lobbyId, address player) view returns (bool)'
+          ];
+          const stateContract = new ethers.Contract(contractAddress, LOBBY_STATE_ABI, signer);
+          
+          const currentPlayers = await stateContract.getLobbyPlayers(onchainLobbyId);
+          const alreadyInLobby = await stateContract.isPlayerInLobby(onchainLobbyId, signerAddress);
+          
+          console.log('🎮 Estado del lobby ON-CHAIN (justo antes de join):', {
+            lobbyId: onchainLobbyId,
+            creator: lobbyDataOnChain.creator,
+            token: lobbyDataOnChain.token,
+            entryFee: lobbyDataOnChain.entryFee.toString(),
+            maxPlayers: lobbyDataOnChain.maxPlayers,
+            currentPlayers: currentPlayers.length,
+            state: lobbyDataOnChain.state, // 0=OPEN, 1=STARTED, 2=ENDED
+            players: currentPlayers,
+            yourAddress: signerAddress,
+            alreadyInLobby
+          });
+          
+          // Validaciones críticas
+          if (alreadyInLobby) {
+            throw new Error('Ya estás en este lobby on-chain');
+          }
+          
+          if (currentPlayers.length >= Number(lobbyDataOnChain.maxPlayers)) {
+            throw new Error(`Lobby lleno (${currentPlayers.length}/${lobbyDataOnChain.maxPlayers})`);
+          }
+          
+          if (Number(lobbyDataOnChain.state) !== 0) {
+            throw new Error(`Lobby no está OPEN (estado: ${lobbyDataOnChain.state}, esperado: 0=OPEN)`);
+          }
+          
+          if (lobbyDataOnChain.entryFee.toString() !== entryFeeWei.toString()) {
+            console.warn('⚠️ Entry fee mismatch!', {
+              expected: lobbyDataOnChain.entryFee.toString(),
+              sending: entryFeeWei.toString()
+            });
+          }
+          
+          // Verificar balance y allowance del token si es ERC20
+          if (!isNativeToken) {
+            const ERC20_BALANCE_ABI = [
+              'function balanceOf(address owner) view returns (uint256)',
+              'function allowance(address owner, address spender) view returns (uint256)',
+              'function decimals() view returns (uint8)',
+              'function symbol() view returns (string)'
+            ];
+            const tokenContract = new ethers.Contract(tokenAddr, ERC20_BALANCE_ABI, signer);
+            
+            const balance = await tokenContract.balanceOf(signerAddress);
+            const allowance = await tokenContract.allowance(signerAddress, contractAddress);
+            let decimals = 18;
+            let symbol = 'TOKEN';
+            
+            try {
+              decimals = await tokenContract.decimals();
+              symbol = await tokenContract.symbol();
+            } catch (e) {
+              console.warn('No se pudo obtener decimals/symbol del token');
+            }
+            
+            console.log('💰 Balance del token:', {
+              balance: balance.toString(),
+              balanceFormatted: ethers.formatUnits(balance, decimals),
+              symbol,
+              required: entryFeeWei.toString(),
+              requiredFormatted: ethers.formatUnits(entryFeeWei, decimals),
+              hasEnough: balance >= entryFeeWei
+            });
+            
+            console.log('🔓 Allowance del token:', {
+              allowance: allowance.toString(),
+              allowanceFormatted: ethers.formatUnits(allowance, decimals),
+              required: entryFeeWei.toString(),
+              requiredFormatted: ethers.formatUnits(entryFeeWei, decimals),
+              hasEnough: allowance >= entryFeeWei
+            });
+            
+            // Validar que hay suficiente balance
+            if (balance < entryFeeWei) {
+              throw new Error(`Balance insuficiente de ${symbol}. Tienes ${ethers.formatUnits(balance, decimals)} pero necesitas ${ethers.formatUnits(entryFeeWei, decimals)}`);
+            }
+            
+            // Validar que hay suficiente allowance
+            if (allowance < entryFeeWei) {
+              throw new Error(`Allowance insuficiente. Tienes ${ethers.formatUnits(allowance, decimals)} aprobado pero necesitas ${ethers.formatUnits(entryFeeWei, decimals)}`);
+            }
+          }
+          
+        } catch (debugError: any) {
+          console.error('❌ Error en debugging:', debugError);
+          throw debugError;
+        }
+        console.log('🔍 ============================================================');
+
+        // Llamar a joinLobby del contrato (ya creamos la instancia arriba)
+        console.log('📝 Enviando transacción joinLobby...');
+        console.log('   - Lobby ID:', onchainLobbyId);
+        console.log('   - Value:', isNativeToken ? entryFeeWei.toString() : '0');
+        console.log('   - Token address:', tokenAddr);
+        console.log('   - Is native:', isNativeToken);
         
-        console.log('📝 Enviando transacción joinLobby con value:', entryFeeWei.toString());
-        const tx = await contract.joinLobby(onchainLobbyId, { value: entryFeeWei });
+        const tx = await contract.joinLobby(onchainLobbyId, { 
+          value: isNativeToken ? entryFeeWei : 0 // Solo enviar value si es token nativo
+        });
         console.log('✅ Transacción enviada:', tx.hash);
         
         setSuccessMessage('Transacción de unión enviada. Esperando confirmación...');
@@ -773,30 +1035,59 @@ const Lobbies: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2 font-medium">Costo de entrada</label>
-                  <div className="flex">
-                    <input
-                      type="number"
-                      step="0.001"
-                      placeholder="0.001"
-                      min={0}
-                      value={lobbyForms.pago.entryCost || ''}
-                      onChange={(e) => handleInputChange('pago', 'entryCost', e.target.value as unknown as number)}
-                      className="w-full bg-slate-800 border-2 border-slate-700 rounded-l-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
-                      disabled={isLoading}
-                    />
-                    <select 
-                      value={pagoToken} 
-                      onChange={(e) => setPagoToken(e.target.value as SupportedToken)} 
-                      className="bg-slate-800 border-2 border-slate-700 rounded-r-lg px-3 py-3 text-white"
-                    >
-                      {NETWORK_CONFIGS[pagoNetwork].supportedTokens.map((token) => (
-                        <option key={token.symbol} value={token.symbol}>
-                          {token.symbol}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <input
+                    type="number"
+                    step="0.001"
+                    placeholder="0.001"
+                    min={0}
+                    value={lobbyForms.pago.entryCost || ''}
+                    onChange={(e) => handleInputChange('pago', 'entryCost', e.target.value as unknown as number)}
+                    className="w-full bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
+                    disabled={isLoading}
+                  />
                 </div>
+
+                {/* Selector de moneda - solo mostrar para Ronin mainnet */}
+                {pagoNetwork === 'ronin' && NETWORK_CONFIGS[pagoNetwork].supportedTokens.length > 1 ? (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2 font-medium">Moneda</label>
+                    <div className="flex flex-col gap-2">
+                      {NETWORK_CONFIGS[pagoNetwork].supportedTokens.map((token) => {
+                        const icon = getTokenIcon(token.symbol);
+                        const isImage = icon.startsWith('/') || icon.includes('.');
+                        return (
+                          <button
+                            key={token.symbol}
+                            type="button"
+                            onClick={() => setPagoToken(token.symbol)}
+                            className={`flex items-center gap-3 px-4 py-2 rounded-lg border-2 transition-all ${
+                              pagoToken === token.symbol
+                                ? 'bg-yellow-600 border-yellow-400 text-white shadow-lg scale-105'
+                                : 'bg-slate-800 border-slate-700 text-gray-300 hover:border-slate-600'
+                            }`}
+                          >
+                            {isImage ? (
+                              <img src={icon} alt={token.symbol} className="w-6 h-6 object-contain" />
+                            ) : (
+                              <span className="text-xl">{icon}</span>
+                            )}
+                            <span className="font-semibold">{token.symbol}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2 font-medium">Moneda</label>
+                    <div className="bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-3 text-white font-semibold">
+                      {NETWORK_CONFIGS[pagoNetwork].nativeCurrency.symbol}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-2 font-medium">Modo de reparto</label>
@@ -834,9 +1125,20 @@ const Lobbies: React.FC = () => {
                       <span>Red:</span>
                       <span className="font-semibold text-white">{NETWORK_CONFIGS[pagoNetwork].name}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <span>Moneda:</span>
-                      <span className="font-semibold text-white">{pagoToken}</span>
+                      <span className="font-semibold text-white flex items-center gap-1">
+                        {(() => {
+                          const icon = getTokenIcon(pagoToken);
+                          const isImage = icon.startsWith('/') || icon.includes('.');
+                          return isImage ? (
+                            <img src={icon} alt={pagoToken} className="w-4 h-4 object-contain inline" />
+                          ) : (
+                            <span>{icon}</span>
+                          );
+                        })()}
+                        {pagoToken}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Modo de reparto:</span>

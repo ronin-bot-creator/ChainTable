@@ -3,7 +3,7 @@ export type LobbyType = 'publico' | 'privado' | 'pago';
 export type LobbyStatus = 'waiting' | 'starting' | 'in-progress' | 'finished' | 'cancelled';
 
 // Redes blockchain soportadas
-export type SupportedNetwork = 'abstract' | 'base' | 'ethereum' | 'ronin' | 'ronin-saigon' | 'sepolia';
+export type SupportedNetwork = 'ronin' | 'ronin-saigon' | 'sepolia';
 
 // Monedas soportadas por red
 export type SupportedToken = 'ETH' | 'RON' | 'RICE' | 'RONKE';
@@ -28,60 +28,6 @@ export interface NetworkConfig {
 
 // Configuraciones de redes disponibles
 export const NETWORK_CONFIGS: Record<SupportedNetwork, NetworkConfig> = {
-  abstract: {
-    name: 'Abstract',
-    chainId: 2741, // Abstract testnet
-    rpcUrl: 'https://api.testnet.abs.xyz',
-    blockExplorer: 'https://explorer.testnet.abs.xyz',
-    nativeCurrency: {
-      symbol: 'ETH',
-      name: 'Ether',
-      decimals: 18
-    },
-    supportedTokens: [
-      {
-        symbol: 'ETH',
-        name: 'Ether',
-        decimals: 18
-      }
-    ]
-  },
-  base: {
-    name: 'Base',
-    chainId: 8453,
-    rpcUrl: 'https://mainnet.base.org',
-    blockExplorer: 'https://basescan.org',
-    nativeCurrency: {
-      symbol: 'ETH',
-      name: 'Ether',
-      decimals: 18
-    },
-    supportedTokens: [
-      {
-        symbol: 'ETH',
-        name: 'Ether',
-        decimals: 18
-      }
-    ]
-  },
-  ethereum: {
-    name: 'Ethereum',
-    chainId: 1,
-    rpcUrl: 'https://eth.llamarpc.com',
-    blockExplorer: 'https://etherscan.io',
-    nativeCurrency: {
-      symbol: 'ETH',
-      name: 'Ether',
-      decimals: 18
-    },
-    supportedTokens: [
-      {
-        symbol: 'ETH',
-        name: 'Ether',
-        decimals: 18
-      }
-    ]
-  },
   ronin: {
     name: 'Ronin',
     chainId: 2020,
@@ -102,13 +48,13 @@ export const NETWORK_CONFIGS: Record<SupportedNetwork, NetworkConfig> = {
         symbol: 'RICE',
         name: 'Rice Token',
         decimals: 18,
-        address: '0x' // TODO: Agregar dirección real del token RICE en mainnet
+        address: '0x9049ca10dd4cba0248226b4581443201f8f225c6'
       },
       {
         symbol: 'RONKE',
         name: 'Ronke Token',
         decimals: 18,
-        address: '0x' // TODO: Agregar dirección real del token RONKE en mainnet
+        address: '0xf988f63bf26c3ed3fbf39922149e3e7b1e5c27cb'
       }
     ]
   },

@@ -13,9 +13,11 @@ const contractService = require('./contractService');
 // Initialize RPC providers for different networks
 const RPC_SEPOLIA = process.env.RPC_URL_SEPOLIA || process.env.RPC_URL || '';
 const RPC_RONIN_SAIGON = process.env.RPC_URL_RONIN_TESTNET || '';
+const RPC_RONIN = process.env.RPC_URL_RONIN || '';
 
 let sepoliaProvider = null;
 let roninSaigonProvider = null;
+let roninProvider = null;
 
 // Sepolia provider
 if (RPC_SEPOLIA && RPC_SEPOLIA.length > 0) {
@@ -40,6 +42,14 @@ if (RPC_RONIN_SAIGON && RPC_RONIN_SAIGON.length > 0) {
   console.warn('⚠️  RPC_URL_RONIN_TESTNET not configured, Ronin Saigon validation disabled');
 }
 
+// Ronin Mainnet provider
+if (RPC_RONIN && RPC_RONIN.length > 0) {
+  roninProvider = new ethers.JsonRpcProvider(RPC_RONIN);
+  console.log('✅ Using RPC_RONIN provider from env');
+} else {
+  console.warn('⚠️  RPC_URL_RONIN not configured, Ronin mainnet validation disabled');
+}
+
 // Helper to get provider by chain name
 function getProviderForChain(chain) {
   switch(chain) {
@@ -47,6 +57,8 @@ function getProviderForChain(chain) {
       return sepoliaProvider;
     case 'ronin-saigon':
       return roninSaigonProvider;
+    case 'ronin':
+      return roninProvider;
     default:
       return null;
   }
@@ -259,7 +271,7 @@ class LobbyManager {
       type: data.type,
       status: 'waiting',
       hostId: creatorId,
-      maxPlayers: data.type === 'publico' ? 8 : data.type === 'privado' ? 6 : 4,
+      maxPlayers: 8, // Todos los tipos de lobby ahora soportan 8 jugadores (UnoLobbyV2)
       players: [{ id: creatorId, username: creatorUsername, walletAddress, socketId, isHost: true, isReady: false, joinedAt: new Date(), isConnected: true }],
       createdAt: new Date(),
       ...(data.onchain && { onchain: data.onchain }),
@@ -314,6 +326,7 @@ class LobbyManager {
           type: lobby.type, 
           currentPlayers: lobby.players.length, 
           maxPlayers: lobby.maxPlayers,
+          ...(lobby.mode && { mode: lobby.mode }), // Agregar modo BEAST/CLASSIC
           ...(lobby.onchain && { onchain: lobby.onchain }),
           ...(lobby.entryCost && { entryCost: lobby.entryCost })
         });

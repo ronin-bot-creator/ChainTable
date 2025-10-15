@@ -30,6 +30,7 @@ interface UseGameReturn {
   showColorPicker: boolean;
   winners: Winner[];
   gameMessage: string | null;
+  prizeDistributionTx: { hash: string; explorerUrl: string } | null;
   
   // Cleanup
   leaveGame: () => void;
@@ -45,6 +46,7 @@ export function useGame(lobbyId: string): UseGameReturn {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pendingWildCardIndex, setPendingWildCardIndex] = useState<number | null>(null);
   const [gameMessage, setGameMessage] = useState<string | null>(null);
+  const [prizeDistributionTx, setPrizeDistributionTx] = useState<{ hash: string; explorerUrl: string } | null>(null);
 
   // Obtener sesión actual
   const session = getUserSession();
@@ -172,8 +174,9 @@ export function useGame(lobbyId: string): UseGameReturn {
       // Fallback: Si no hay contract address pero hay chain, usar direcciones configuradas
       if (!contractAddress && chain) {
         const CONTRACT_ADDRESSES: Record<string, string> = {
-          'sepolia': '0x5099CA1a00a96869A6D1DCEC7BF579bf72D51E1B',
-          'ronin-saigon': '0x45cE17CAD7eb69b186E3053d15bccc8E7dF1A2F2',
+          'sepolia': '0x640b9985a069782a662286D86CcD2681d2A35AD1',
+          'ronin-saigon': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
+          'ronin': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
         };
         contractAddress = CONTRACT_ADDRESSES[chain];
         console.log('⚠️ Using fallback contract address for', chain, ':', contractAddress);
@@ -246,16 +249,48 @@ export function useGame(lobbyId: string): UseGameReturn {
       showGameMessage('⏳ Esperando confirmación... Esto puede tomar unos segundos', 0);
       const receipt = await tx.wait();
       
-      console.log('✅ Premios distribuidos:', receipt.hash);
-      showGameMessage(`✅ Premios distribuidos! TX: ${receipt.hash.slice(0, 10)}...`, 8000);
+      console.log('✅ Premios distribuidos! TX Hash:', tx.hash);
+      console.log('📋 Receipt:', receipt);
       
-      // Notificar al servidor (opcional, para logging)
+      // Obtener la URL del explorador según la chain
+      const explorerUrls: Record<string, string> = {
+        'sepolia': 'https://sepolia.etherscan.io/tx/',
+        'ronin': 'https://app.roninchain.com/tx/',
+        'ronin-saigon': 'https://saigon-app.roninchain.com/tx/'
+      };
+      
+      const explorerUrl = gameState.onchain?.chain ? explorerUrls[gameState.onchain.chain] || '' : '';
+      const txLink = explorerUrl + tx.hash;
+      
+      console.log('🔗 Explorer URL generada:', txLink);
+      
+      // Guardar TX info en el estado
+      const txData = {
+        hash: tx.hash,
+        explorerUrl: txLink
+      };
+      
+      console.log('💾 Guardando TX data en estado:', txData);
+      setPrizeDistributionTx(txData);
+      
+      console.log('✅ Estado prizeDistributionTx actualizado');
+      
+      // Mostrar mensaje con link al explorador
+      showGameMessage(
+        `✅ ¡Premios distribuidos exitosamente!\n\n🔗 Ver transacción:\n${tx.hash.slice(0, 20)}...`, 
+        15000
+      );
+      
+      console.log(`🔗 Ver en explorador: ${txLink}`);
+      
+      // Notificar al servidor con el TX hash correcto
       socketService.emit('game:prizeDistributed', {
-        txHash: receipt.hash,
-        lobbyId
+        txHash: tx.hash,
+        lobbyId,
+        explorerUrl: txLink
       });
       
-      return receipt;
+      return { tx, receipt, txHash: tx.hash, explorerUrl: txLink };
       
     } catch (error: any) {
       console.error('❌ Error en auto-distribución:', error);
@@ -589,6 +624,7 @@ export function useGame(lobbyId: string): UseGameReturn {
     showColorPicker,
     winners,
     gameMessage,
+    prizeDistributionTx,
     
     // Cleanup
     leaveGame,

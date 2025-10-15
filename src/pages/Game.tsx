@@ -41,6 +41,7 @@ const Game: React.FC = () => {
     showColorPicker,
     winners,
     gameMessage,
+    prizeDistributionTx,
     leaveGame,
     // autoDistributePrizes manejado internamente por useGame
   } = useGame(lobbyId || '');
@@ -48,6 +49,13 @@ const Game: React.FC = () => {
 
   // AUTO-DISTRIBUTION: Manejado ÚNICAMENTE desde el evento del servidor 
   // 'game:distributePrizes' en useGame.ts para evitar llamadas duplicadas
+
+  // Debug: Log prize distribution TX state
+  React.useEffect(() => {
+    if (prizeDistributionTx) {
+      console.log('🎉 [Game.tsx] prizeDistributionTx disponible:', prizeDistributionTx);
+    }
+  }, [prizeDistributionTx]);
 
   if (!lobbyId || !session) {
     return null; // Se redirigirá en useEffect
@@ -206,6 +214,30 @@ const Game: React.FC = () => {
               </div>
             </div>
 
+            {/* TX de distribución de premios */}
+            {prizeDistributionTx && (
+              <div className="mb-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-5 rounded-xl shadow-lg border-2 border-green-400">
+                <div className="text-center mb-3">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <span className="text-3xl">🎉</span>
+                    <h3 className="font-bold text-xl">¡Premios Distribuidos!</h3>
+                  </div>
+                  <p className="text-sm text-green-100">Transacción confirmada en blockchain</p>
+                </div>
+                <div className="bg-black/20 px-4 py-3 rounded-lg font-mono text-xs break-all mb-3 text-center">
+                  {prizeDistributionTx.hash}
+                </div>
+                <a
+                  href={prizeDistributionTx.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full bg-white text-green-700 px-6 py-3 rounded-lg font-bold hover:bg-green-50 transition-colors shadow-md text-center"
+                >
+                  🔗 Ver Transacción en Explorador
+                </a>
+              </div>
+            )}
+
             <button
               onClick={leaveGame}
               className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-lg"
@@ -249,6 +281,32 @@ const Game: React.FC = () => {
         {gameMessage && (
           <div className="bg-blue-600 text-white px-4 py-2 rounded-lg mb-4 text-center animate-fade-in">
             {gameMessage}
+          </div>
+        )}
+
+        {/* TX de distribución de premios */}
+        {prizeDistributionTx && (
+          <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-4 rounded-lg mb-4 shadow-lg border-2 border-green-400">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">🎉</span>
+                  <h3 className="font-bold text-lg">¡Premios Distribuidos!</h3>
+                </div>
+                <p className="text-sm text-green-100 mb-2">Transacción confirmada en blockchain</p>
+                <div className="bg-black/20 px-3 py-2 rounded font-mono text-xs break-all">
+                  {prizeDistributionTx.hash}
+                </div>
+              </div>
+              <a
+                href={prizeDistributionTx.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-4 bg-white text-green-700 px-6 py-3 rounded-lg font-bold hover:bg-green-50 transition-colors shadow-md flex items-center gap-2"
+              >
+                🔗 Ver en Explorador
+              </a>
+            </div>
           </div>
         )}
 
