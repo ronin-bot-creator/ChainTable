@@ -16,6 +16,7 @@ import {
   getUserSession,
   clearUserSession,
 } from "../utils/userSession";
+import { useTranslation } from 'react-i18next'
 
 // Importar imágenes de tokens
 import ronIcon from "../assets/tokens/ron.png";
@@ -31,6 +32,7 @@ interface LobbyFormData {
 
 const Lobbies: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation()
   const { address: walletAddress, isConnected: isWalletConnected } =
     useAccount();
   const { disconnect: disconnectWallet } = useDisconnect();
@@ -38,9 +40,7 @@ const Lobbies: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const [isUserNameSet, setIsUserNameSet] = useState<boolean>(false);
-  const [tabId] = useState<string>(
-    () => `tab_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-  );
+  // removed unused tabId state
 
   // Usar el hook de websockets
   const {
@@ -470,7 +470,7 @@ const Lobbies: React.FC = () => {
               );
               console.log("📝 Transacción approve enviada:", approveTx.hash);
 
-              const approveReceipt = await approveTx.wait();
+              await approveTx.wait();
               console.log("✅ Token aprobado");
             } else {
               console.log("✅ Allowance ya suficiente, saltando approve");
@@ -563,7 +563,7 @@ const Lobbies: React.FC = () => {
               : { name: "" },
         }));
 
-        setSuccessMessage(`Lobby "${formData.name}" creado exitosamente!`);
+  setSuccessMessage(t('lobby_created_success', { name: formData.name }));
 
         // Navegar al juego
         navigate(`/game/${createdLobby.id}`);
@@ -622,10 +622,9 @@ const Lobbies: React.FC = () => {
         // Si es un lobby privado, pedir contraseña (simplificado para demo)
         let password: string | undefined;
         if (lobbyType === "privado") {
-          password =
-            prompt("Ingresa la contraseña del lobby privado:") || undefined;
+          password = prompt(t('prompt_private_password')) || undefined;
           if (!password) {
-            setErrorMessage("Contraseña requerida para lobby privado");
+            setErrorMessage(t('password_required'));
             return;
           }
         }
@@ -937,7 +936,7 @@ const Lobbies: React.FC = () => {
               setSuccessMessage(
                 "Aprobación enviada. Esperando confirmación..."
               );
-              const approveReceipt = await approveTx.wait();
+              await approveTx.wait();
               console.log("✅ Token aprobado");
               setSuccessMessage("Token aprobado. Uniéndose al lobby...");
             } else {
@@ -1110,7 +1109,7 @@ const Lobbies: React.FC = () => {
             "Transacción de unión enviada. Esperando confirmación..."
           );
           const receipt = await tx.wait();
-          setSuccessMessage("¡Pago confirmado! Uniéndote al lobby...");
+          setSuccessMessage(t('payment_confirmed_joining'));
 
           // Get txHash from receipt or tx
           const txHash =
@@ -1123,14 +1122,14 @@ const Lobbies: React.FC = () => {
             contract: contractAddress,
             chain: "sepolia",
           });
-          setSuccessMessage("¡Pago confirmado y te uniste al lobby!");
+          setSuccessMessage(t('payment_confirmed_joined'));
           navigate(`/game/${lobbyId}`);
           return;
         }
 
         // Non-paid or other-network join (normal flow)
         await socketJoinLobby(lobbyId, password);
-        setSuccessMessage("¡Te has unido al lobby exitosamente!");
+  setSuccessMessage(t('joined_lobby_success'));
         navigate(`/game/${lobbyId}`);
       } catch (error) {
         console.error("Error uniéndose al lobby:", error);
@@ -1179,10 +1178,10 @@ const Lobbies: React.FC = () => {
               <span className="text-2xl">🃏</span>
             </div>
             <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent tracking-wider font-jersey">
-              CHAIN TABLE
+              {t('title')}
             </h1>
           </div>
-          <p className="text-gray-400 text-sm">Panel de Lobbies</p>
+          <p className="text-gray-400 text-sm">{t('lobbies_title')}</p>
         </div>
       </div>
 
@@ -1203,37 +1202,37 @@ const Lobbies: React.FC = () => {
                     ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(
                         -4
                       )}`
-                    : "Cargando..."}
+                    : t('loading')}
                 </div>
-                <div className="text-xs text-gray-400">Wallet conectada</div>
+                <div className="text-xs text-gray-400">{t('wallet_connected')}</div>
               </div>
             </div>
 
             <button
               onClick={() => navigate("/auth")}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105 text-sm font-semibold"
-              title="Cambiar wallet"
+              title={t('auth_change_wallet')}
             >
-              🔄 Cambiar
+              🔄 {t('auth_change_wallet')}
             </button>
 
             <button
               onClick={handleLogout}
               className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105 text-sm font-semibold"
             >
-              🚪 Salir
+              🚪 {t('auth_logout')}
             </button>
           </div>
 
           {/* Estado de conexión mejorado */}
           <div className="flex items-center gap-3">
-            <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl shadow-lg border transition-all ${
-                isConnected
-                  ? "bg-green-950/50 border-green-600/50"
-                  : "bg-red-950/50 border-red-600/50"
-              }`}
-            >
+              <div
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl shadow-lg border transition-all ${
+                  isConnected
+                    ? "bg-green-950/50 border-green-600/50"
+                    : "bg-red-950/50 border-red-600/50"
+                }`}
+              >
               <div
                 className={`w-2 h-2 rounded-full ${
                   isConnected ? "bg-green-400" : "bg-red-400"
@@ -1244,7 +1243,7 @@ const Lobbies: React.FC = () => {
                   isConnected ? "text-green-400" : "text-red-400"
                 }`}
               >
-                {isConnected ? "Conectado" : "Desconectado"}
+                {isConnected ? t('status_connected') : t('status_disconnected')}
               </span>
             </div>
 
@@ -1256,7 +1255,7 @@ const Lobbies: React.FC = () => {
                   : "bg-green-600 hover:bg-green-700 text-white"
               }`}
             >
-              {isConnected ? "❌ Desconectar" : "🔄 Conectar"}
+              {isConnected ? t('disconnect') : t('connect')}
             </button>
           </div>
         </div>
@@ -1274,20 +1273,20 @@ const Lobbies: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-white tracking-wide font-jersey">
-                    Lobby Público
+                      {t('lobbies_public_label')}
                   </h2>
-                  <p className="text-xs text-blue-300">Juega con el mundo</p>
+                    <p className="text-xs text-blue-300">{t('lobby_public_sub')}</p>
                 </div>
               </div>
             </div>
             <div className="p-6 space-y-5">
               <div>
                 <label className="block text-sm text-gray-300 mb-2 font-medium">
-                  Nombre del lobby
+                  {t('label_lobby_name')}
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Mesa pública"
+                  placeholder={t('placeholder_public_example')}
                   value={lobbyForms.publico.name}
                   onChange={(e) =>
                     handleInputChange("publico", "name", e.target.value)
@@ -1301,14 +1300,14 @@ const Lobbies: React.FC = () => {
                 onClick={() => handleCreateLobby("publico")}
                 disabled={isLoading || !isConnected}
               >
-                {isLoading ? "⏳ Creando..." : "➕ Crear lobby"}
+                {isLoading ? t('creating') : t('lobbies_create')}
               </button>
               <button
                 className="w-full text-blue-400 hover:text-blue-300 disabled:text-slate-500 font-semibold text-sm transition-colors"
                 onClick={handleUpdateList}
                 disabled={isLoading}
               >
-                {isLoading ? "⏳ Actualizando..." : "🔄 Actualizar lista"}
+                {isLoading ? t('updating') : t('lobbies_update_list')}
               </button>
             </div>
           </div>
@@ -1322,20 +1321,20 @@ const Lobbies: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-white tracking-wide font-jersey">
-                    Lobby Privado
+                    {t('lobbies_private_label')}
                   </h2>
-                  <p className="text-xs text-purple-300">Solo amigos</p>
+                  <p className="text-xs text-purple-300">{t('lobby_private_sub')}</p>
                 </div>
               </div>
             </div>
             <div className="p-6 space-y-5">
               <div>
                 <label className="block text-sm text-gray-300 mb-2 font-medium">
-                  Nombre del lobby
+                  {t('label_lobby_name')}
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Solo amigos"
+                  placeholder={t('placeholder_private_example')}
                   value={lobbyForms.privado.name}
                   onChange={(e) =>
                     handleInputChange("privado", "name", e.target.value)
@@ -1346,7 +1345,7 @@ const Lobbies: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-2 font-medium">
-                  Contraseña
+                  {t('label_password')}
                 </label>
                 <input
                   type="password"
@@ -1364,14 +1363,14 @@ const Lobbies: React.FC = () => {
                 onClick={() => handleCreateLobby("privado")}
                 disabled={isLoading || !isConnected}
               >
-                {isLoading ? "⏳ Creando..." : "➕ Crear lobby"}
+                {isLoading ? t('creating') : t('lobbies_create')}
               </button>
               <button
                 className="w-full text-purple-400 hover:text-purple-300 disabled:text-slate-500 font-semibold text-sm transition-colors"
                 onClick={handleUpdateList}
                 disabled={isLoading}
               >
-                {isLoading ? "⏳ Actualizando..." : "🔄 Actualizar lista"}
+                {isLoading ? t('updating') : t('lobbies_update_list')}
               </button>
             </div>
           </div>
@@ -1386,9 +1385,9 @@ const Lobbies: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold text-white tracking-wide font-jersey">
-                      Lobby Pago
+                      {t('lobbies_paid_label')}
                     </h2>
-                    <p className="text-xs text-yellow-300">Premios reales</p>
+                    <p className="text-xs text-yellow-300">{t('lobbies_paid_sub')}</p>
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
@@ -1410,11 +1409,11 @@ const Lobbies: React.FC = () => {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm text-gray-300 mb-2 font-medium">
-                  Nombre del lobby
+                  {t('label_lobby_name')}
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Torneo de la tarde"
+                  placeholder={t('placeholder_paid_example')}
                   value={lobbyForms.pago.name}
                   onChange={(e) =>
                     handleInputChange("pago", "name", e.target.value)
@@ -1427,7 +1426,7 @@ const Lobbies: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-2 font-medium">
-                    Costo de entrada
+                    {t('game_entry_cost')}
                   </label>
                   <input
                     type="number"
@@ -1452,7 +1451,7 @@ const Lobbies: React.FC = () => {
                 NETWORK_CONFIGS[pagoNetwork].supportedTokens.length > 1 ? (
                   <div>
                     <label className="block text-sm text-gray-300 mb-2 font-medium">
-                      Moneda
+                      {t('label_currency')}
                     </label>
                     <div className="flex flex-col gap-2">
                       {NETWORK_CONFIGS[pagoNetwork].supportedTokens.map(
@@ -1504,7 +1503,7 @@ const Lobbies: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-2 font-medium">
-                    Modo de reparto
+                    {t('label_distribution_mode')}
                   </label>
                   <div className="flex gap-2">
                     <button
@@ -1532,7 +1531,7 @@ const Lobbies: React.FC = () => {
 
                 <div className="mt-2">
                   <label className="block text-sm text-gray-300 mb-2 font-medium">
-                    Red Blockchain
+                    {t('label_blockchain_network')}
                   </label>
                   <select
                     value={pagoNetwork}
@@ -1559,17 +1558,17 @@ const Lobbies: React.FC = () => {
 
                 <div className="mt-3 p-4 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-xl border border-slate-700/50">
                   <div className="text-xs text-yellow-300 mb-3 font-semibold flex items-center gap-2">
-                    📊 Resumen de configuración
+                    {t('config_summary_title')}
                   </div>
                   <div className="space-y-2 text-xs text-gray-300">
                     <div className="flex justify-between">
-                      <span>Red:</span>
+                      <span>{t('label_network')}:</span>
                       <span className="font-semibold text-white">
                         {NETWORK_CONFIGS[pagoNetwork].name}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span>Moneda:</span>
+                      <span>{t('label_currency')}:</span>
                       <span className="font-semibold text-white flex items-center gap-1">
                         {(() => {
                           const icon = getTokenIcon(pagoToken);
@@ -1589,7 +1588,7 @@ const Lobbies: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Modo de reparto:</span>
+                      <span>{t('label_distribution_mode')}:</span>
                       <span
                         className={`font-semibold ${
                           pagoMode === "BEAST"
@@ -1602,7 +1601,7 @@ const Lobbies: React.FC = () => {
                     </div>
                     {lobbyForms.pago.entryCost && (
                       <div className="flex justify-between mt-2 pt-2 border-t border-slate-600">
-                        <span>Costo de entrada:</span>
+                        <span>{t('game_entry_cost')}:</span>
                         <span className="font-bold text-yellow-400">
                           {lobbyForms.pago.entryCost} {pagoToken}
                         </span>
@@ -1612,13 +1611,11 @@ const Lobbies: React.FC = () => {
                   <div className="mt-2 pt-2 border-t border-slate-700 text-xs text-gray-400">
                     {pagoMode === "BEAST" ? (
                       <div>
-                        <strong className="text-rose-400">Beast:</strong> 95% al
-                        ganador, 5% fee
+                        <strong className="text-rose-400">Beast:</strong> {t('beast_description')}
                       </div>
                     ) : (
                       <div>
-                        <strong className="text-indigo-400">Classic:</strong>{" "}
-                        60% / 20% / 15%, resto fee
+                        <strong className="text-indigo-400">Classic:</strong> {t('classic_description')}
                       </div>
                     )}
                   </div>
@@ -1631,14 +1628,14 @@ const Lobbies: React.FC = () => {
                   onClick={() => handleCreateLobby("pago")}
                   disabled={isLoading || !isConnected}
                 >
-                  {isLoading ? "⏳ Creando..." : "💰 Crear lobby con premio"}
+                  {isLoading ? t('creating') : t('lobbies_create_paid')}
                 </button>
                 <button
                   className="w-full text-yellow-400 hover:text-yellow-300 disabled:text-slate-500 font-semibold text-sm transition-colors"
                   onClick={handleUpdateList}
                   disabled={isLoading}
                 >
-                  {isLoading ? "⏳ Actualizando..." : "🔄 Actualizar lista"}
+                  {isLoading ? t('updating') : t('lobbies_update_list')}
                 </button>
               </div>
             </div>
@@ -1651,7 +1648,7 @@ const Lobbies: React.FC = () => {
         <div className="px-8 pb-8 bg-slate-950">
           <div className="max-w-7xl mx-auto">
             <h2 className="text-2xl font-bold text-white mb-6 text-center">
-              🎮 Lobbies Activos
+              {t('lobbies_active_title')}
             </h2>
 
             <div className="space-y-4">
@@ -1662,7 +1659,7 @@ const Lobbies: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-green-400 mb-3 flex items-center">
                     <span className="mr-2">⏳</span>
-                    Esperando Jugadores
+                    {t('waiting_players')}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {activeLobbies
@@ -1688,15 +1685,15 @@ const Lobbies: React.FC = () => {
                               }`}
                             >
                               {lobby.type === "publico"
-                                ? "Público"
+                                ? t('lobby_type_public_short')
                                 : lobby.type === "privado"
-                                ? "Privado"
-                                : "Pago"}
+                                ? t('lobby_type_private_short')
+                                : t('lobby_type_paid_short')}
                             </span>
                           </div>
                           <div className="text-gray-400 text-sm space-y-1">
                             <div>
-                              Jugadores: {lobby.playerCount}/{lobby.maxPlayers}
+                              {t('game_players')}: {lobby.playerCount}/{lobby.maxPlayers}
                             </div>
                             {lobby.type === "pago" && lobby.onchain && (
                               <div className="flex items-center space-x-1 text-yellow-400 font-semibold">
@@ -1730,7 +1727,7 @@ const Lobbies: React.FC = () => {
                               }
                               disabled={isLoading || !isConnected}
                             >
-                              {isLoading ? "Conectando..." : "Unirse"}
+                              {isLoading ? t('connecting') : t('lobbies_join')}
                             </button>
                           </div>
                         </div>
@@ -1746,7 +1743,7 @@ const Lobbies: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-red-400 mb-3 flex items-center">
                     <span className="mr-2">🔥</span>
-                    En Partida
+                    {t('in_game_title')}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {activeLobbies
@@ -1770,14 +1767,14 @@ const Lobbies: React.FC = () => {
                               }`}
                             >
                               {lobby.type === "publico"
-                                ? "Público"
+                                ? t('lobby_type_public_short')
                                 : lobby.type === "privado"
-                                ? "Privado"
-                                : "Pago"}
+                                ? t('lobby_type_private_short')
+                                : t('lobby_type_paid_short')}
                             </span>
                           </div>
                           <div className="text-gray-400 text-sm space-y-1">
-                            <div>Jugadores: {lobby.playerCount}</div>
+                            <div>{t('game_players')}: {lobby.playerCount}</div>
                             {lobby.type === "pago" && lobby.onchain && (
                               <div className="flex items-center space-x-1 text-yellow-400 font-semibold">
                                 <span>💰</span>
@@ -1807,7 +1804,7 @@ const Lobbies: React.FC = () => {
                               disabled
                               className="w-full bg-gray-600 text-gray-400 font-bold py-2 px-4 rounded cursor-not-allowed"
                             >
-                              En curso...
+                                {t('in_progress')}
                             </button>
                           </div>
                         </div>
@@ -1827,10 +1824,10 @@ const Lobbies: React.FC = () => {
             <div className="bg-slate-800 rounded-lg p-8 border border-slate-700">
               <div className="text-6xl mb-4">🎮</div>
               <h3 className="text-xl font-bold text-white mb-2">
-                No hay lobbies activos
+                {t('lobbies_no_active')}
               </h3>
               <p className="text-gray-400">
-                ¡Crea un lobby para empezar a jugar!
+                {t('lobbies_create_prompt')}
               </p>
             </div>
           </div>

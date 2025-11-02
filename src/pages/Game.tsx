@@ -7,11 +7,13 @@ import { getUserSession } from "../utils/userSession";
 import Card from "../components/Card";
 import PlayerHand from "../components/PlayerHand";
 import ColorPicker from "../components/ColorPicker";
+import { useTranslation } from 'react-i18next'
 
 const Game: React.FC = () => {
   const { lobbyId } = useParams<{ lobbyId: string }>();
   const navigate = useNavigate();
   const session = getUserSession();
+  const { t } = useTranslation()
 
   // Verificar autenticación y lobbyId
   useEffect(() => {
@@ -82,9 +84,9 @@ const Game: React.FC = () => {
           <div className="relative z-10 bg-white rounded-2xl shadow-2xl p-12 text-center border border-gray-200">
             <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600 mx-auto mb-6"></div>
             <h2 className="text-2xl font-bold text-gray-800 mb-2">
-              Cargando lobby...
+              {t('game_loading')}
             </h2>
-            <p className="text-gray-600">Conectando al servidor</p>
+            <p className="text-gray-600">{t('game_connecting')}</p>
           </div>
         </div>
       );
@@ -110,7 +112,7 @@ const Game: React.FC = () => {
                   <span className="text-2xl">🃏</span>
                 </div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
-                  Lobby: {gameState.name}
+                  {`Lobby: ${gameState.name}`}
                 </h1>
               </div>
 
@@ -120,7 +122,7 @@ const Game: React.FC = () => {
                   <span className="text-2xl">💰</span>
                   <div>
                     <div className="text-xs font-medium text-yellow-700 mb-1">
-                      Costo de entrada
+                      {t('game_entry_cost')}
                     </div>
                     <span className="font-bold text-lg">
                       {(() => {
@@ -144,9 +146,9 @@ const Game: React.FC = () => {
             </div>
 
             {/* Jugadores */}
-            <div className="mb-8">
+              <div className="mb-8">
               <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-xl font-bold text-gray-800">Jugadores</h2>
+                <h2 className="text-xl font-bold text-gray-800">{t('game_players')}</h2>
                 <div className="flex-1 h-px bg-gradient-to-r from-green-200 to-blue-200"></div>
                 <div className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-4 py-1 rounded-full font-bold text-sm">
                   {gameState.players.length}
@@ -180,7 +182,7 @@ const Game: React.FC = () => {
                           )}
                           {player.id === session?.id && (
                             <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full font-semibold">
-                              Tú
+                              {t('you_label')}
                             </span>
                           )}
                         </div>
@@ -207,10 +209,10 @@ const Game: React.FC = () => {
                 className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 disabled:transform-none"
               >
                 {session?.id !== gameState.hostId
-                  ? "⏸️ Solo el creador puede iniciar"
+                  ? t('game_start_only_host')
                   : isLoading
-                  ? "⏳ Iniciando..."
-                  : "▶️ Iniciar Partida"}
+                  ? t('game_starting')
+                  : t('game_start')}
               </button>
 
               {session?.id === gameState.hostId &&
@@ -225,7 +227,7 @@ const Game: React.FC = () => {
                 onClick={leaveGame}
                 className="px-6 py-3 bg-gray-600 text-white rounded-xl hover:bg-gray-700 font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
               >
-                🚪 Salir del Lobby
+                {t('game_leave')}
               </button>
             </div>
 
@@ -233,8 +235,7 @@ const Game: React.FC = () => {
               <div className="mt-6 flex items-center justify-center gap-3 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-xl">
                 <span className="text-2xl">⏳</span>
                 <p className="text-yellow-800 font-medium">
-                  Se necesita al menos{" "}
-                  <span className="font-bold">2 jugadores</span> para iniciar
+                  {t('game_need_two', { count: 2 })}
                 </p>
               </div>
             )}
@@ -266,7 +267,7 @@ const Game: React.FC = () => {
                 <div className="text-6xl">🎉</div>
               </div>
               <h1 className="text-4xl font-extrabold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-600 bg-clip-text text-transparent mb-2">
-                ¡Partida Terminada!
+                {t('game_finished')}
               </h1>
               <div className="h-1 w-24 bg-gradient-to-r from-purple-400 to-pink-400 mx-auto rounded-full"></div>
             </div>
@@ -283,7 +284,7 @@ const Game: React.FC = () => {
             {/* Podium mejorado */}
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-gray-800 mb-6">
-                Resultados Finales
+                {t('game_results')}
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {winners.map((winner, index) => (
@@ -323,7 +324,7 @@ const Game: React.FC = () => {
                         </span>
                         {winner.socketId === session.id && (
                           <span className="px-3 py-1 bg-white/30 backdrop-blur-sm text-white text-xs rounded-full font-bold border-2 border-white/50">
-                            TÚ
+                            {t('you_label')}
                           </span>
                         )}
                       </div>
@@ -343,7 +344,7 @@ const Game: React.FC = () => {
                   <div className="flex items-center justify-center gap-3 mb-3">
                     <span className="text-5xl animate-pulse">🎉</span>
                     <h3 className="font-bold text-3xl">
-                      ¡Premios Distribuidos!
+                      {t('game_prizes_distributed')}
                     </h3>
                   </div>
                   <p className="text-green-100 font-medium text-lg mb-2">
@@ -359,7 +360,7 @@ const Game: React.FC = () => {
                   rel="noopener noreferrer"
                   className="block w-full bg-white text-green-700 px-8 py-4 rounded-xl font-bold hover:bg-green-50 transition-all shadow-lg hover:shadow-xl text-center transform hover:scale-105"
                 >
-                  🔗 Ver Transacción en Explorador
+                  {t('game_view_tx')}
                 </a>
               </div>
             )}
@@ -368,7 +369,7 @@ const Game: React.FC = () => {
               onClick={leaveGame}
               className="px-10 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 font-bold text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105"
             >
-              🏠 Volver a Lobbies
+              {t('back_to_lobbies')}
             </button>
           </div>
         </div>
@@ -399,7 +400,7 @@ const Game: React.FC = () => {
               <h1 className="text-3xl font-bold text-white">
                 {gameState?.name}
               </h1>
-              <p className="text-emerald-200 text-sm">Partida en progreso</p>
+              <p className="text-emerald-200 text-sm">{t('game_in_progress')}</p>
             </div>
           </div>
 
@@ -407,7 +408,7 @@ const Game: React.FC = () => {
             {currentPlayer && (
               <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl shadow-lg">
                 <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                <span className="font-semibold">Turno: {currentPlayer}</span>
+                <span className="font-semibold">{t('turn_label')} {currentPlayer}</span>
               </div>
             )}
 
@@ -415,7 +416,7 @@ const Game: React.FC = () => {
               onClick={leaveGame}
               className="px-5 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
             >
-              🚪 Salir
+              {t('game_leave')}
             </button>
           </div>
         </div>
@@ -449,7 +450,7 @@ const Game: React.FC = () => {
                 rel="noopener noreferrer"
                 className="bg-white text-green-700 px-6 py-3 rounded-xl font-bold hover:bg-green-50 transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:scale-105"
               >
-                🔗 Ver en Explorador
+                {t('game_view_tx')}
               </a>
             </div>
           </div>
@@ -468,7 +469,7 @@ const Game: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-700">
               <h3 className="text-white font-bold mb-4 text-lg flex items-center gap-2">
-                <span>👥</span> Otros Jugadores
+                <span>👥</span> {t('other_players')}
               </h3>
               <div className="space-y-3">
                 {gameState?.players
@@ -526,7 +527,7 @@ const Game: React.FC = () => {
           <div className="lg:col-span-2">
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 text-center shadow-2xl border border-slate-700">
               <h3 className="text-white font-bold mb-6 text-xl flex items-center justify-center gap-2">
-                <span>🎲</span> Mesa de Juego
+                <span>🎲</span> {t('game_table')}
               </h3>
 
               {/* Carta actual y mazo */}
@@ -541,7 +542,7 @@ const Game: React.FC = () => {
                     disabled={!isMyTurn || isLoading}
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed shadow-lg transition-all duration-300 transform hover:scale-105 disabled:transform-none"
                   >
-                    {isMyTurn ? "🎴 Robar Carta" : "Esperando..."}
+                    {isMyTurn ? t('draw_card') : t('waiting')}
                   </button>
                 </div>
 
@@ -564,7 +565,7 @@ const Game: React.FC = () => {
                     )}
                   {gameState?.currentActiveColor && (
                     <div className="mt-4 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl inline-block border-2 border-indigo-400">
-                      <span className="text-sm font-bold">Color activo: </span>
+                      <span className="text-sm font-bold">{t('color_active')} </span>
                       <span className="font-black text-lg">
                         {gameState.currentActiveColor}
                       </span>
@@ -581,7 +582,7 @@ const Game: React.FC = () => {
                     disabled={isLoading}
                     className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-600 text-white rounded-xl hover:from-yellow-600 hover:to-orange-700 disabled:opacity-50 font-bold shadow-lg transition-all duration-300 transform hover:scale-105"
                   >
-                    ⏭️ Pasar Turno
+                    {t('pass_turn')}
                   </button>
                 </div>
               )}
@@ -592,21 +593,17 @@ const Game: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-700">
               <h3 className="text-white font-bold mb-5 text-lg flex items-center gap-2">
-                <span>📊</span> Estadísticas
+                <span>📊</span> {t('stats_title')}
               </h3>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-900/50 to-blue-950/50 rounded-xl border border-blue-700">
-                  <span className="text-blue-200 font-semibold">
-                    🃏 Cartas en mazo
-                  </span>
+                  <span className="text-blue-200 font-semibold">{t('cards_in_deck')}</span>
                   <span className="text-white font-bold text-lg">
                     {gameState?.drawPile?.length || 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-gradient-to-r from-purple-900/50 to-purple-950/50 rounded-xl border border-purple-700">
-                  <span className="text-purple-200 font-semibold">
-                    🔄 Dirección
-                  </span>
+                  <span className="text-purple-200 font-semibold">{t('direction_label')}</span>
                   <span className="text-white font-bold text-xl">
                     {gameState?.direction === 1 ? "→" : "←"}
                   </span>
@@ -656,10 +653,11 @@ const CancelLobbyButton: React.FC<{
   cancelLobby: (lobbyId: string) => Promise<void>;
 }> = ({ lobbyId, cancelLobby }) => {
   const [isCancelling, setIsCancelling] = useState(false);
+  const { t } = useTranslation()
 
   const handleCancel = async () => {
     const ok = window.confirm(
-      "¿Estás seguro que querés cancelar el lobby? Esto expulsará a todos los jugadores."
+      t('cancel_lobby') + " - " + t('cancel_lobby_confirm')
     );
     if (!ok) return;
     setIsCancelling(true);
@@ -668,8 +666,7 @@ const CancelLobbyButton: React.FC<{
     } catch (err) {
       console.error("Error cancelando lobby:", err);
       alert(
-        "No se pudo cancelar el lobby: " +
-          (err instanceof Error ? err.message : String(err))
+        t('cancel_lobby') + ': ' + (err instanceof Error ? err.message : String(err))
       );
     } finally {
       setIsCancelling(false);
@@ -686,7 +683,7 @@ const CancelLobbyButton: React.FC<{
           : "bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white"
       }`}
     >
-      {isCancelling ? "⏳ Cancelando..." : "🗑️ Cancelar Lobby"}
+      {isCancelling ? t('canceling') : t('cancel_lobby')}
     </button>
   );
 };
