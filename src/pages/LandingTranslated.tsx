@@ -44,10 +44,10 @@ export default function LandingTranslated() {
       </div>
 
       <div className="relative z-10 max-w-4xl mx-auto">
-        {/* Main Logo */}
-        <div className="mb-8 animate-fade-in">
+  {/* Main Logo */}
+  <div className="mb-8 animate-fade-in flex flex-col items-center text-center">
           <div className="inline-block mb-6 transform hover:scale-110 transition-transform duration-300">
-            <div className="w-32 h-32 bg-gradient-to-br from-yellow-400 via-orange-400 to-red-500 rounded-3xl flex items-center justify-center shadow-2xl rotate-3 hover:rotate-6 transition-transform">
+            <div className="w-32 h-32 bg-gradient-to-br from-yellow-400 via-orange-400 to-red-500 rounded-3xl flex items-center justify-center shadow-2xl rotate-3 hover:rotate-6 transition-transform text-center">
               <span className="text-7xl">🃏</span>
             </div>
           </div>
@@ -62,10 +62,10 @@ export default function LandingTranslated() {
         </div>
 
         {/* Tagline */}
-        <p className="text-xl md:text-2xl mb-4 max-w-3xl mx-auto text-gray-300 font-medium leading-relaxed animate-fade-in">
+        <p className="text-xl md:text-2xl mb-4 max-w-3xl mx-auto text-gray-300 font-medium leading-relaxed animate-fade-in text-center">
           {t('tagline_line1', { game: t('tagline_game') })}
         </p>
-        <p className="text-base md:text-lg mb-12 max-w-2xl mx-auto text-gray-400 leading-relaxed animate-fade-in">
+        <p className="text-base md:text-lg mb-12 max-w-3xl mx-auto text-gray-400 leading-relaxed animate-fade-in text-center">
           {t('tagline_line2')}
         </p>
 

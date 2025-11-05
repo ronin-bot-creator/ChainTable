@@ -290,13 +290,32 @@ contract UnoLobbyV2 is Ownable, ReentrancyGuard {
             revert("Only creator or owner can cancel");
         }
 
+        // Cambiar estado ANTES de hacer refunds (checks-effects-interactions pattern)
         lobby.state = LobbyState.CANCELLED;
 
         // Reembolsar a todos los jugadores
         uint256 refundedCount = lobby.players.length;
-        for (uint i = 0; i < lobby.players.length; i++) {
-            _transfer(lobby.token, lobby.players[i], lobby.entryFee);
-            emit Payout(lobbyId, lobby.players[i], lobby.entryFee);
+        
+        // Validar que haya jugadores y fondos suficientes
+        if (refundedCount > 0) {
+            uint256 totalRefund = lobby.entryFee * refundedCount;
+            
+            // Verificar balance del contrato
+            uint256 contractBalance;
+            if (lobby.token == address(0)) {
+                contractBalance = address(this).balance;
+            } else {
+                contractBalance = IERC20(lobby.token).balanceOf(address(this));
+            }
+            
+            require(contractBalance >= totalRefund, "Insufficient contract balance for refunds");
+            
+            // Ejecutar refunds
+            for (uint i = 0; i < lobby.players.length; i++) {
+                address player = lobby.players[i];
+                _transfer(lobby.token, player, lobby.entryFee);
+                emit Payout(lobbyId, player, lobby.entryFee);
+            }
         }
 
         emit LobbyCancelled(lobbyId, msg.sender, refundedCount);

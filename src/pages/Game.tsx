@@ -38,6 +38,7 @@ const Game: React.FC = () => {
     drawCard,
     passTurn,
     chooseWildColor,
+    cancelLobbyOnChain,
     isLoading,
     error,
     showColorPicker,
@@ -219,7 +220,9 @@ const Game: React.FC = () => {
                 gameState.status === "waiting" && (
                   <CancelLobbyButton
                     lobbyId={gameState.id}
+                    cancelLobbyOnChain={cancelLobbyOnChain}
                     cancelLobby={cancelLobby}
+                    isOnchainLobby={gameState.type === "pago"}
                   />
                 )}
 
@@ -651,18 +654,29 @@ const Game: React.FC = () => {
 const CancelLobbyButton: React.FC<{
   lobbyId: string;
   cancelLobby: (lobbyId: string) => Promise<void>;
-}> = ({ lobbyId, cancelLobby }) => {
+  cancelLobbyOnChain: () => Promise<void>;
+  isOnchainLobby: boolean;
+}> = ({ lobbyId, cancelLobby, cancelLobbyOnChain, isOnchainLobby }) => {
   const [isCancelling, setIsCancelling] = useState(false);
   const { t } = useTranslation()
 
   const handleCancel = async () => {
-    const ok = window.confirm(
-      t('cancel_lobby') + " - " + t('cancel_lobby_confirm')
-    );
+    const confirmMessage = isOnchainLobby 
+      ? `${t('cancel_lobby')} - ${t('cancel_lobby_confirm')}\n\n⚠️ Este lobby tiene entrada pagada. Se devolverán los fondos a todos los jugadores.`
+      : `${t('cancel_lobby')} - ${t('cancel_lobby_confirm')}`;
+      
+    const ok = window.confirm(confirmMessage);
     if (!ok) return;
+    
     setIsCancelling(true);
     try {
-      await cancelLobby(lobbyId);
+      if (isOnchainLobby) {
+        // Lobby con entrada pagada - cancelar on-chain (incluye refund)
+        await cancelLobbyOnChain();
+      } else {
+        // Lobby gratuito - solo cancelar en el servidor
+        await cancelLobby(lobbyId);
+      }
     } catch (err) {
       console.error("Error cancelando lobby:", err);
       alert(

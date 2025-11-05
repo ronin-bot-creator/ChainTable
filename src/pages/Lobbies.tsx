@@ -70,16 +70,19 @@ const Lobbies: React.FC = () => {
   const [pagoToken, setPagoToken] = useState<SupportedToken>("RON");
   const [pagoNetwork, setPagoNetwork] = useState<SupportedNetwork>("ronin"); // Changed to ronin mainnet
 
-  // Contract addresses per network (UnoLobbyV2 - Max 8 players - Nueva wallet segura)
+  // Contract addresses per network (UnoLobbyV2 - Max 8 players - Con funcionalidad de REFUND)
   const CONTRACT_ADDRESSES: Record<string, string> = {
-    sepolia: "0x640b9985a069782a662286D86CcD2681d2A35AD1",
-    "ronin-saigon": "0x2161843aed57dd6aa085955c593E9Ff32153bEbe",
-    ronin: "0x2161843aed57dd6aa085955c593E9Ff32153bEbe",
-  }; // basic minimal ABI for createLobby and joinLobby
+    sepolia: "0x440462F79Ac531fB6F3618925766dEA09AFC0E02", // V2 Fixed - Refund working
+    "ronin-saigon": "0x3f412d0279c59E3FF7ff971095fBabA1C3a7C2C2", // V2 Fixed - Refund working
+    ronin: "0x6Fa5163DFe0e5847CE27b0574A9A7885f4bAD25c", // V2 Fixed - Refund working ✅
+  }; // basic minimal ABI for createLobby, joinLobby and cancelLobby
   const UNO_ABI = [
     "function createLobby(address token, uint256 entryFee, uint16 maxPlayers, uint8 mode) returns (uint256)",
     "function joinLobby(uint256 lobbyId) payable",
+    "function cancelLobby(uint256 lobbyId)",
     "event LobbyCreated(uint256 indexed lobbyId, address indexed creator, address token, uint256 entryFee, uint16 maxPlayers, uint8 mode)",
+    "event LobbyCancelled(uint256 indexed lobbyId, address indexed canceller, uint256 refundedCount)",
+    "event Payout(uint256 indexed lobbyId, address indexed player, uint256 amount)",
   ];
 
   // Helper para obtener el icono del token
@@ -1141,6 +1144,74 @@ const Lobbies: React.FC = () => {
       }
     },
     [clearMessages, socketJoinLobby, navigate]
+  );
+
+  // Manejo de cancelación de lobby (on-chain)
+  const handleCancelLobby = useCallback(
+    async (_lobbyId: string, onchainLobbyId: number, chain: SupportedNetwork) => {
+      if (!walletAddress || !isWalletConnected) {
+        setErrorMessage("Debes conectar tu wallet primero");
+        return;
+      }
+
+      try {
+        clearMessages();
+        setErrorMessage("");
+        setSuccessMessage("Cancelando lobby y procesando refunds...");
+
+        const contractAddress = CONTRACT_ADDRESSES[chain];
+        if (!contractAddress) {
+          throw new Error(`No contract address for chain ${chain}`);
+        }
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const contract = new ethers.Contract(contractAddress, UNO_ABI, signer);
+
+        console.log("🔴 Cancelando lobby on-chain:", {
+          lobbyId: onchainLobbyId,
+          chain,
+          contract: contractAddress,
+        });
+
+        const tx = await contract.cancelLobby(onchainLobbyId);
+        console.log("📤 Transacción de cancelación enviada:", tx.hash);
+
+        setSuccessMessage("Esperando confirmación de cancelación...");
+        const receipt = await tx.wait();
+        
+        console.log("✅ Lobby cancelado on-chain:", receipt);
+
+        // Buscar eventos de refund en los logs
+        const payoutEvents = receipt.logs.filter((log: any) => {
+          try {
+            const parsed = contract.interface.parseLog(log);
+            return parsed?.name === "Payout";
+          } catch {
+            return false;
+          }
+        });
+
+        const refundCount = payoutEvents.length;
+        
+        setSuccessMessage(
+          `✅ Lobby cancelado exitosamente. ${refundCount} jugador(es) reembolsado(s).`
+        );
+
+        // Recargar lista de lobbies después de 2 segundos
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } catch (error: any) {
+        console.error("❌ Error cancelando lobby:", error);
+        const errorMsg =
+          error?.reason ||
+          error?.message ||
+          "Error desconocido al cancelar el lobby";
+        setErrorMessage(errorMsg);
+      }
+    },
+    [walletAddress, isWalletConnected, clearMessages]
   );
 
   // Manejo de cambios en formularios

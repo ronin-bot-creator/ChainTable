@@ -19,10 +19,14 @@ export default function Landing() {
       {/* Decorative icons */}
       <div className="absolute top-20 left-12 text-6xl opacity-20 animate-bounce">🃏</div>
       <div className="absolute bottom-24 right-20 text-6xl opacity-20 animate-bounce">🃏</div>
+      <div className="absolute bottom-24 left-20 text-6xl opacity-20 animate-bounce">🃏</div>
+      <div className="absolute top-24 right-20 text-6xl opacity-20 animate-bounce">🃏</div>
+
+
 
       <div className="relative z-10 max-w-4xl mx-auto">
         <div className="flex justify-between items-start mb-8">
-          <div className="text-left">
+          <div className="text-center">
             <h1 className="text-6xl md:text-7xl font-extrabold mb-2 bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 bg-clip-text text-transparent">
               {t('title')}
             </h1>

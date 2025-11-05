@@ -1,0 +1,16 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://api.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://api.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://api.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://api.roninchain.com/rpc"
+    }
+  ]
+}

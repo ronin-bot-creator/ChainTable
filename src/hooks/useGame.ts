@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ethers } from 'ethers';
 import type { GameState, Card, GameUpdateData, Winner, WildColor } from '../types/game';
 import { socketService } from '../services/socketService';
 import { getUserSession } from '../utils/userSession';
@@ -20,6 +21,7 @@ interface UseGameReturn {
   drawCard: () => void;
   passTurn: () => void;
   chooseWildColor: (color: WildColor) => void;
+  cancelLobbyOnChain: () => Promise<void>;
   
   // Premios (NEW in V2)
   autoDistributePrizes: (winnerAddresses: string[]) => Promise<any>;
@@ -173,11 +175,11 @@ export function useGame(lobbyId: string): UseGameReturn {
       
       // Fallback: Si no hay contract address pero hay chain, usar direcciones configuradas
       if (!contractAddress && chain) {
-        const CONTRACT_ADDRESSES: Record<string, string> = {
-          'sepolia': '0x640b9985a069782a662286D86CcD2681d2A35AD1',
-          'ronin-saigon': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
-          'ronin': '0x2161843aed57dd6aa085955c593E9Ff32153bEbe',
-        };
+    const CONTRACT_ADDRESSES: Record<string, string> = {
+      'sepolia': '0x440462F79Ac531fB6F3618925766dEA09AFC0E02', // V2 Fixed
+      'ronin-saigon': '0x3f412d0279c59E3FF7ff971095fBabA1C3a7C2C2', // V2 Fixed
+      'ronin': '0x6Fa5163DFe0e5847CE27b0574A9A7885f4bAD25c', // V2 Fixed ✅
+    };
         contractAddress = CONTRACT_ADDRESSES[chain];
         console.log('⚠️ Using fallback contract address for', chain, ':', contractAddress);
       }
@@ -572,6 +574,74 @@ export function useGame(lobbyId: string): UseGameReturn {
     setPendingWildCardIndex(null);
   }, [lobbyId, pendingWildCardIndex]);
 
+  const cancelLobbyOnChain = useCallback(async () => {
+    if (!gameState?.onchain || !gameState.onchain.lobbyId) {
+      throw new Error('No hay información on-chain del lobby');
+    }
+
+    const onchainLobbyId = gameState.onchain.lobbyId;
+    const chain = gameState.onchain.chain || 'ronin-saigon';
+    
+    const CONTRACT_ADDRESSES: Record<string, string> = {
+      'sepolia': '0x440462F79Ac531fB6F3618925766dEA09AFC0E02',
+      'ronin-saigon': '0x3f412d0279c59E3FF7ff971095fBabA1C3a7C2C2',
+      'ronin': '0x6Fa5163DFe0e5847CE27b0574A9A7885f4bAD25c',
+    };
+
+    const contractAddress = CONTRACT_ADDRESSES[chain];
+    if (!contractAddress) {
+      throw new Error(`No hay dirección de contrato para la red ${chain}`);
+    }
+
+    const UNO_ABI = [
+      "function cancelLobby(uint256 lobbyId)",
+      "event LobbyCancelled(uint256 indexed lobbyId, address indexed canceller, uint256 refundedCount)",
+      "event Payout(uint256 indexed lobbyId, address indexed player, uint256 amount)",
+    ];
+
+    showGameMessage('Cancelando lobby y procesando refunds...', 5000);
+    
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(contractAddress, UNO_ABI, signer);
+
+    console.log('🔴 Cancelando lobby on-chain:', {
+      lobbyId: onchainLobbyId,
+      chain,
+      contract: contractAddress,
+    });
+
+    const tx = await contract.cancelLobby(onchainLobbyId);
+    console.log('📤 Transacción de cancelación enviada:', tx.hash);
+
+    showGameMessage('Esperando confirmación de cancelación...', 0);
+    const receipt = await tx.wait();
+    
+    console.log('✅ Lobby cancelado on-chain:', receipt);
+
+    // Buscar eventos de refund en los logs
+    const payoutEvents = receipt.logs.filter((log: any) => {
+      try {
+        const parsed = contract.interface.parseLog(log);
+        return parsed?.name === "Payout";
+      } catch {
+        return false;
+      }
+    });
+
+    const refundCount = payoutEvents.length;
+    
+    showGameMessage(
+      `✅ Lobby cancelado exitosamente. ${refundCount} jugador(es) reembolsado(s).`,
+      5000
+    );
+
+    // Esperar 2 segundos y navegar a lobbies
+    setTimeout(() => {
+      navigate('/lobbies');
+    }, 2000);
+  }, [gameState, showGameMessage, navigate]);
+
   const leaveGame = useCallback(() => {
     // Intentar salir del lobby en el servidor y limpiar estado local
     (async () => {
@@ -614,6 +684,7 @@ export function useGame(lobbyId: string): UseGameReturn {
     drawCard,
     passTurn,
     chooseWildColor,
+    cancelLobbyOnChain,
     
     // Premios (NEW in V2)
     autoDistributePrizes,
