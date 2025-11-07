@@ -67,21 +67,41 @@ function getProviderForChain(chain) {
 const app = express();
 const server = http.createServer(app);
 
-// Configurar CORS
-app.use(cors());
+// Normalizar FRONTEND_ORIGIN (quitar trailing slash y construir array de origins permitidos)
+const rawOrigin = process.env.FRONTEND_ORIGIN || '';
+const allowedOrigins = [];
 
-// Normalizar FRONTEND_ORIGIN (quitar trailing slash y manejar credentials)
-const rawOrigin = process.env.FRONTEND_ORIGIN || '*';
-const FRONTEND_ORIGIN = rawOrigin === '*' ? '*' : rawOrigin.replace(/\/$/, '');
+// Añadir origin de producción si está definido
+if (rawOrigin && rawOrigin !== '*') {
+  allowedOrigins.push(rawOrigin.replace(/\/$/, ''));
+}
 
+// Añadir localhost para desarrollo
+allowedOrigins.push('http://localhost:5173');
+allowedOrigins.push('http://localhost:3000');
+
+// Si no hay FRONTEND_ORIGIN definido, permitir todos (solo para dev/testing)
+const corsOrigin = allowedOrigins.length > 2 ? allowedOrigins : '*';
+
+console.log('🔒 CORS origins permitidos:', corsOrigin);
+
+// Configurar CORS para Express
+app.use(cors({
+  origin: corsOrigin,
+  methods: ['GET', 'POST'],
+  credentials: corsOrigin !== '*'
+}));
+
+// Configurar Socket.IO con CORS
 const io = socketIo(server, {
   cors: {
-    origin: FRONTEND_ORIGIN,
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
-    credentials: FRONTEND_ORIGIN !== '*',
+    credentials: corsOrigin !== '*'
   },
   path: '/socket.io',
   transports: ['websocket', 'polling'],
+  allowEIO3: true // Compatibilidad con versiones anteriores
 });
 
 // ===== MODELOS BÁSICOS =====
