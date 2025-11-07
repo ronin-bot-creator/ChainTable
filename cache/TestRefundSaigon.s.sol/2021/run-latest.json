@@ -1,0 +1,16 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://saigon-testnet.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://saigon-testnet.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://saigon-testnet.roninchain.com/rpc"
+    },
+    {
+      "rpc": "https://saigon-testnet.roninchain.com/rpc"
+    }
+  ]
+}

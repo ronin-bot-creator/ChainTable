@@ -1,48 +1,26 @@
-# Dependencias
-node_modules/
-package-lock.json
-
-# Build de TypeScript
-dist/
-*.tsbuildinfo
-
 # Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.log
+pnpm-debug.log*
+lerna-debug.log*
 
-# Variables de entorno
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+node_modules
+dist
+dist-ssr
+*.local
 
-# Archivos del sistema
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# IDEs y editores
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Archivos temporales
-*.tmp
-*.temp
-.cache/
-
-# Coverage de testing
-coverage/
-.nyc_output/
-
-# Archivos de configuración local
-settings.json
+.env
