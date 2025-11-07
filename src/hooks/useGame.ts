@@ -73,7 +73,7 @@ export function useGame(lobbyId: string): UseGameReturn {
       const storedLobbyId = localStorage.getItem('activeLobbyId');
       if (session && storedLobbyId) {
         console.log('🔄 Enviando lobby:reconnect tras reconexión de socket');
-        socketService.emit('lobby:reconnect', { lobbyId: storedLobbyId, userId: session.id });
+        socketService.reconnectToLobby(storedLobbyId, session.id);
         setTimeout(() => {
           console.log('🔍 Solicitando información del lobby tras reconexión');
           socketService.getLobbyInfo(storedLobbyId);
@@ -286,7 +286,7 @@ export function useGame(lobbyId: string): UseGameReturn {
       console.log(`🔗 Ver en explorador: ${txLink}`);
       
       // Notificar al servidor con el TX hash correcto
-      socketService.emit('game:prizeDistributed', {
+      socketService.notifyPrizeDistributed({
         txHash: tx.hash,
         lobbyId,
         explorerUrl: txLink

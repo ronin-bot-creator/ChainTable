@@ -242,6 +242,18 @@ class SocketService {
     this.emit('game:getLobbyInfo', { lobbyId });
   }
 
+  async reconnectToLobby(lobbyId: string, userId: string): Promise<void> {
+    await this.ensureConnected();
+    console.debug('socketService.reconnectToLobby ->', { lobbyId, userId });
+    this.emit('lobby:reconnect', { lobbyId, userId });
+  }
+
+  async notifyPrizeDistributed(data: { txHash: string; lobbyId: string; explorerUrl?: string }): Promise<void> {
+    await this.ensureConnected();
+    console.debug('socketService.notifyPrizeDistributed ->', data);
+    this.emit('game:prizeDistributed', data);
+  }
+
   // Métodos para escuchar eventos
   on<K extends keyof SocketEvents>(event: K, callback: SocketEvents[K]): void {
     if (this.socket) {
