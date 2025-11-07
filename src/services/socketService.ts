@@ -68,7 +68,6 @@ export interface SocketEvents {
 
 class SocketService {
   private socket: Socket | null = null;
-  private serverUrl: string = 'http://localhost:3001'; // URL del servidor WebSocket
 
   connect(): Promise<Socket> {
     return new Promise((resolve, reject) => {
@@ -86,8 +85,11 @@ class SocketService {
       }
 
       console.log('🔌 Creando nueva conexión socket...');
-      this.socket = io(this.serverUrl, {
-        transports: ['websocket'],
+      const serverUrl = (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SOCKET_URL : undefined) || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+
+      this.socket = io(serverUrl, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
         autoConnect: true,
         reconnection: true,
         reconnectionAttempts: 5,

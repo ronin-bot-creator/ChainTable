@@ -72,9 +72,11 @@ app.use(cors());
 
 const io = socketIo(server, {
   cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST']
-  }
+    origin: process.env.FRONTEND_ORIGIN || '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+  path: '/socket.io',
 });
 
 // ===== MODELOS BÁSICOS =====
@@ -999,6 +1001,6 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`🚀 Servidor WebSocket corriendo en puerto ${PORT}`);
-  console.log(`🔗 Clientes pueden conectarse desde: http://localhost:5173`);
+  console.log(`🔗 Clientes pueden conectarse desde: ${process.env.FRONTEND_ORIGIN || 'any origin (CORS=* configured)'} (set FRONTEND_ORIGIN env to restrict)`);
   console.log(`📋 Eventos disponibles: lobby:*, game:*`);
 });

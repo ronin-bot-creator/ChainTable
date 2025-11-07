@@ -1,7 +1,8 @@
 try {
   const { io } = require('socket.io-client');
 
-  const socket = io('http://localhost:3001', { transports: ['websocket'], autoConnect: true, reconnectionAttempts: 2 });
+  const SOCKET_URL = process.env.SOCKET_URL || 'http://localhost:3001';
+  const socket = io(SOCKET_URL, { transports: ['websocket'], autoConnect: true, reconnectionAttempts: 2, path: '/socket.io' });
 
   socket.on('connect', () => {
     console.log('test-client connected', socket.id);
