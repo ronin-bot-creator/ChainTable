@@ -86,6 +86,7 @@ class SocketService {
 
       console.log('🔌 Creando nueva conexión socket...');
       const serverUrl = (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SOCKET_URL : undefined) || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+      console.log('📡 Socket serverUrl:', serverUrl); // Log temporal para verificar URL en producción
 
       this.socket = io(serverUrl, {
         path: '/socket.io',
@@ -113,6 +114,45 @@ class SocketService {
     });
   }
 
+  // Esperar a que el socket esté conectado antes de emitir eventos
+  async ensureConnected(timeout = 5000): Promise<void> {
+    if (this.socket?.connected) {
+      return Promise.resolve();
+    }
+    
+    // Si no hay socket, intentar conectar
+    if (!this.socket) {
+      await this.connect();
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Socket connection timeout'));
+      }, timeout);
+
+      const cleanup = () => {
+        this.socket?.off('connect', onConnect);
+        this.socket?.off('connect_error', onError);
+        clearTimeout(timer);
+      };
+
+      const onConnect = () => {
+        cleanup();
+        resolve();
+      };
+
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err || new Error('Socket connection error'));
+      };
+
+      this.socket?.once('connect', onConnect);
+      this.socket?.once('connect_error', onError);
+    });
+  }
+
   disconnect(): void {
     if (this.socket) {
       // Trace stack to see who requested a disconnect
@@ -129,99 +169,75 @@ class SocketService {
   }
 
   // Métodos para lobbies
-  createLobby(data: CreateLobbyFormData, creatorId: string, creatorUsername: string, walletAddress: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async createLobby(data: CreateLobbyFormData, creatorId: string, creatorUsername: string, walletAddress: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.createLobby ->', { data, creatorId, creatorUsername, walletAddress });
     this.emit('lobby:create', { ...data, creatorId, creatorUsername, walletAddress });
   }
 
-  joinLobby(lobbyId: string, playerId: string, username: string, walletAddress: string, password?: string, onchain?: { txHash: string; contract: string; chain: string }): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async joinLobby(lobbyId: string, playerId: string, username: string, walletAddress: string, password?: string, onchain?: { txHash: string; contract: string; chain: string }): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.joinLobby ->', { lobbyId, playerId, username, walletAddress, password, onchain });
     this.emit('lobby:join', { lobbyId, playerId, username, walletAddress, password, onchain });
   }
 
-  leaveLobby(lobbyId: string, playerId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async leaveLobby(lobbyId: string, playerId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.leaveLobby ->', { lobbyId, playerId });
     this.emit('lobby:leave', { lobbyId, playerId });
   }
 
-  cancelLobby(lobbyId: string, playerId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async cancelLobby(lobbyId: string, playerId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.cancelLobby ->', { lobbyId, playerId });
     this.emit('lobby:cancel', { lobbyId, playerId });
   }
 
-  requestLobbyList(): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async requestLobbyList(): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.requestLobbyList ->');
     this.emit('lobby:list');
   }
 
-  setPlayerReady(lobbyId: string, playerId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async setPlayerReady(lobbyId: string, playerId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.setPlayerReady ->', { lobbyId, playerId });
     this.emit('lobby:ready', { lobbyId, playerId });
   }
 
   // ===== MÉTODOS PARA EL JUEGO =====
-  startGame(lobbyId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async startGame(lobbyId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.startGame ->', { lobbyId });
     this.emit('game:start', { lobbyId });
   }
 
-  playCard(lobbyId: string, cardIndex: number): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async playCard(lobbyId: string, cardIndex: number): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.playCard ->', { lobbyId, cardIndex });
     this.emit('game:playCard', { lobbyId, cardIndex });
   }
 
-  drawCard(lobbyId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async drawCard(lobbyId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.drawCard ->', { lobbyId });
     this.emit('game:drawCard', { lobbyId });
   }
 
-  passTurn(lobbyId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async passTurn(lobbyId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.passTurn ->', { lobbyId });
     this.emit('game:passTurn', { lobbyId });
   }
 
-  chooseColor(lobbyId: string, color: WildColor, cardIndex: number): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async chooseColor(lobbyId: string, color: WildColor, cardIndex: number): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.chooseColor ->', { lobbyId, color, cardIndex });
     this.emit('game:chooseColor', { lobbyId, color, cardIndex });
   }
 
-  getLobbyInfo(lobbyId: string): void {
-    if (!this.socket?.connected) {
-      throw new Error('No hay conexión con el servidor');
-    }
+  async getLobbyInfo(lobbyId: string): Promise<void> {
+    await this.ensureConnected();
     console.debug('socketService.getLobbyInfo ->', { lobbyId });
     this.emit('game:getLobbyInfo', { lobbyId });
   }

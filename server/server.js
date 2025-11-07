@@ -70,13 +70,18 @@ const server = http.createServer(app);
 // Configurar CORS
 app.use(cors());
 
+// Normalizar FRONTEND_ORIGIN (quitar trailing slash y manejar credentials)
+const rawOrigin = process.env.FRONTEND_ORIGIN || '*';
+const FRONTEND_ORIGIN = rawOrigin === '*' ? '*' : rawOrigin.replace(/\/$/, '');
+
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_ORIGIN || '*',
+    origin: FRONTEND_ORIGIN,
     methods: ['GET', 'POST'],
-    credentials: true,
+    credentials: FRONTEND_ORIGIN !== '*',
   },
   path: '/socket.io',
+  transports: ['websocket', 'polling'],
 });
 
 // ===== MODELOS BÁSICOS =====
