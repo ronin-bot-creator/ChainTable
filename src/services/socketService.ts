@@ -257,8 +257,8 @@ class SocketService {
     }
   }
 
-  // Método genérico para emit
-  emit<K extends keyof SocketEvents>(event: K, data?: any): void {
+  // Método genérico para emit (privado - usar métodos públicos async)
+  private emit<K extends keyof SocketEvents>(event: K, data?: any): void {
     if (!this.socket?.connected) {
       throw new Error('No hay conexión con el servidor');
     }
