@@ -1146,73 +1146,7 @@ const Lobbies: React.FC = () => {
     [clearMessages, socketJoinLobby, navigate]
   );
 
-  // Manejo de cancelación de lobby (on-chain)
-  const handleCancelLobby = useCallback(
-    async (_lobbyId: string, onchainLobbyId: number, chain: SupportedNetwork) => {
-      if (!walletAddress || !isWalletConnected) {
-        setErrorMessage("Debes conectar tu wallet primero");
-        return;
-      }
-
-      try {
-        clearMessages();
-        setErrorMessage("");
-        setSuccessMessage("Cancelando lobby y procesando refunds...");
-
-        const contractAddress = CONTRACT_ADDRESSES[chain];
-        if (!contractAddress) {
-          throw new Error(`No contract address for chain ${chain}`);
-        }
-
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const contract = new ethers.Contract(contractAddress, UNO_ABI, signer);
-
-        console.log("🔴 Cancelando lobby on-chain:", {
-          lobbyId: onchainLobbyId,
-          chain,
-          contract: contractAddress,
-        });
-
-        const tx = await contract.cancelLobby(onchainLobbyId);
-        console.log("📤 Transacción de cancelación enviada:", tx.hash);
-
-        setSuccessMessage("Esperando confirmación de cancelación...");
-        const receipt = await tx.wait();
-        
-        console.log("✅ Lobby cancelado on-chain:", receipt);
-
-        // Buscar eventos de refund en los logs
-        const payoutEvents = receipt.logs.filter((log: any) => {
-          try {
-            const parsed = contract.interface.parseLog(log);
-            return parsed?.name === "Payout";
-          } catch {
-            return false;
-          }
-        });
-
-        const refundCount = payoutEvents.length;
-        
-        setSuccessMessage(
-          `✅ Lobby cancelado exitosamente. ${refundCount} jugador(es) reembolsado(s).`
-        );
-
-        // Recargar lista de lobbies después de 2 segundos
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } catch (error: any) {
-        console.error("❌ Error cancelando lobby:", error);
-        const errorMsg =
-          error?.reason ||
-          error?.message ||
-          "Error desconocido al cancelar el lobby";
-        setErrorMessage(errorMsg);
-      }
-    },
-    [walletAddress, isWalletConnected, clearMessages]
-  );
+  // Manejo de cancelación de lobby (on-chain) — función removida temporalmente porque no se utiliza actualmente.
 
   // Manejo de cambios en formularios
   const handleInputChange = useCallback(

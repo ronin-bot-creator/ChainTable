@@ -111,7 +111,7 @@ export const NetworkBadge: React.FC<NetworkBadgeProps> = ({ network, size = 'md'
     lg: 'text-base px-4 py-2'
   };
   
-  const networkColors: Record<SupportedNetwork, string> = {
+  const networkColors: Record<string, string> = {
     abstract: 'bg-purple-600/20 text-purple-400 border-purple-600/50',
     base: 'bg-blue-600/20 text-blue-400 border-blue-600/50',
     ethereum: 'bg-gray-600/20 text-gray-300 border-gray-600/50',

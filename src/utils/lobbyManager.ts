@@ -43,10 +43,11 @@ export class LobbyManager {
 
     // Validar costo de entrada para lobbies pagos
     if (config.requiresPayment) {
-      if (!formData.entryCost || formData.entryCost <= 0) {
+      const entryNum = formData.entryCost !== undefined ? Number(formData.entryCost) : NaN;
+      if (isNaN(entryNum) || entryNum <= 0) {
         errors.push('El costo de entrada debe ser mayor a 0');
       }
-      if (formData.entryCost && formData.entryCost > 1000) {
+      if (!isNaN(entryNum) && entryNum > 1000) {
         errors.push('El costo de entrada no puede exceder 1000');
       }
     }
@@ -105,7 +106,14 @@ export class LobbyManager {
       createdBy: creatorId,
       createdAt: new Date(),
       hasPassword: config.requiresPassword,
-      entryCost: config.requiresPayment ? formData.entryCost : undefined,
+      // For paid lobbies, include a paymentConfig object instead of a top-level entryCost
+      paymentConfig: config.requiresPayment
+        ? {
+            network: (formData.network as any) || 'ronin',
+            token: (formData.token as any) || 'RON',
+            amount: formData.entryCost || '0',
+          }
+        : undefined,
       maxPlayers: formData.maxPlayers || config.maxPlayers,
       currentPlayers: 1,
       players: [{
