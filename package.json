@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "hardhat test"
+    "test": "hardhat test",
+    "start": "node server.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
