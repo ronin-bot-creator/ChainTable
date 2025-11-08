@@ -8,7 +8,7 @@
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'self'; 
-                   script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://vercel.live; 
+                   script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://vercel.live; 
                    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
                    font-src 'self' https://fonts.gstatic.com; 
                    connect-src 'self' https://api.roninchain.com https://saigon-testnet.roninchain.com https://eth-sepolia.g.alchemy.com https://chaintable.onrender.com wss://chaintable.onrender.com https://vercel.live wss://vercel.live; 
@@ -16,6 +16,7 @@
                    object-src 'none'; 
                    base-uri 'self'; 
                    frame-ancestors 'none'; 
+                   form-action 'self';
                    upgrade-insecure-requests;">
     
     <title>ChainTable</title>
