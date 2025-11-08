@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/card.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; 
+                   script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://vercel.live; 
+                   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+                   font-src 'self' https://fonts.gstatic.com; 
+                   connect-src 'self' https://api.roninchain.com https://saigon-testnet.roninchain.com https://eth-sepolia.g.alchemy.com https://chaintable.onrender.com wss://chaintable.onrender.com https://vercel.live wss://vercel.live; 
+                   img-src 'self' data: https:; 
+                   object-src 'none'; 
+                   base-uri 'self'; 
+                   frame-ancestors 'none'; 
+                   upgrade-insecure-requests;">
+    
     <title>ChainTable</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
