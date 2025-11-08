@@ -91,6 +91,30 @@ export default function Landing() {
             <span>{t('trust_no_middle')}</span>
           </div>
         </div>
+
+        {/* Footer - Credits */}
+        <div className="mt-20 pt-8 border-t border-gray-800/50">
+          <p className="text-gray-400 text-sm">
+            Created by{' '}
+            <a 
+              href="https://x.com/pimmpi_" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-indigo-400 hover:text-indigo-300 transition-colors underline"
+            >
+              @Alva
+            </a>
+            {' & '}
+            <a 
+              href="https://x.com/Miguelito_Crypt" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-indigo-400 hover:text-indigo-300 transition-colors underline"
+            >
+              @Miguelito
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )
