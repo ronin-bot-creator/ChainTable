@@ -534,11 +534,16 @@ const Game: React.FC = () => {
               </h3>
 
               {/* Carta actual y mazo */}
-              <div className="flex justify-center items-center gap-12 mb-8">
+              <div className="flex justify-center items-start gap-12 mb-8">
                 {/* Mazo */}
-                <div className="text-center">
-                  <div className="w-24 h-36 bg-gradient-to-br from-blue-900 to-blue-950 rounded-xl border-4 border-blue-600 flex items-center justify-center mb-3 shadow-xl transform hover:scale-105 transition-transform cursor-pointer">
-                    <span className="text-white font-black text-lg">🃏</span>
+                <div className="text-center flex flex-col items-center">
+                  <div className="w-36 h-52 rounded-xl border-4 border-blue-600 overflow-hidden mb-3 shadow-xl transform hover:scale-105 transition-transform cursor-pointer bg-white">
+                    <img 
+                      src={`/cartamazo.png?v=${Date.now()}`}
+                      alt="Mazo de cartas" 
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
                   </div>
                   <button
                     onClick={drawCard}
@@ -550,26 +555,38 @@ const Game: React.FC = () => {
                 </div>
 
                 {/* Carta actual */}
-                <div className="text-center">
+                <div className="text-center flex flex-col items-center">
                   {gameState?.discardPile &&
                     gameState.discardPile.length > 0 && (
-                      <div className="transform hover:scale-110 transition-transform duration-300 mb-2">
+                      <div className="transform hover:scale-110 transition-transform duration-300 mb-3">
                         <Card
                           card={
                             gameState.discardPile[
                               gameState.discardPile.length - 1
                             ]
                           }
-                          size="lg"
+                          size="2xl"
                           isPlayable={false}
                           showTooltip={true}
                         />
                       </div>
                     )}
                   {gameState?.currentActiveColor && (
-                    <div className="mt-4 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl inline-block border-2 border-indigo-400">
-                      <span className="text-sm font-bold">{t('color_active')} </span>
-                      <span className="font-black text-lg">
+                    <div 
+                      className={`px-4 py-2 rounded-lg inline-flex items-center gap-2 border-2 shadow-md ${
+                        gameState.currentActiveColor === 'red' 
+                          ? 'bg-red-600 border-red-700'
+                          : gameState.currentActiveColor === 'yellow'
+                          ? 'bg-yellow-500 border-yellow-600'
+                          : gameState.currentActiveColor === 'green'
+                          ? 'bg-green-600 border-green-700'
+                          : gameState.currentActiveColor === 'blue'
+                          ? 'bg-blue-600 border-blue-700'
+                          : 'bg-purple-600 border-purple-700'
+                      }`}
+                    >
+                      <span className="text-xs text-white font-semibold">{t('color_active')}</span>
+                      <span className="font-bold text-sm text-white uppercase">
                         {gameState.currentActiveColor}
                       </span>
                     </div>

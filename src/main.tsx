@@ -86,7 +86,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           showRecentTransactions={false}
         >
           <BrowserRouter>
-          <App />
+            <App />
           </BrowserRouter>
         </RainbowKitProvider>
       </QueryClientProvider>

@@ -8,7 +8,7 @@ interface CardProps {
   onDoubleClick?: () => void;
   isSelected?: boolean;
   isPlayable?: boolean;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl";
   showTooltip?: boolean;
   className?: string;
 }
@@ -29,6 +29,8 @@ export const Card: React.FC<CardProps> = ({
     sm: "w-12 h-16",
     md: "w-16 h-24",
     lg: "w-20 h-30",
+    xl: "w-30 h-40",
+    "2xl": "w-36 h-52",
   };
 
   const cardClasses = [

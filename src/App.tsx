@@ -5,6 +5,7 @@ import Auth from "./pages/Auth";
 import Lobbies from "./pages/Lobbies";
 import Game from "./pages/Game";
 import LanguageSwitcher from "./components/LanguageSwitcher";
+import { Analytics } from "@vercel/analytics/react";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/lobbies" element={<Lobbies />} />
         <Route path="/game/:lobbyId" element={<Game />} />
       </Routes>
+      <Analytics />
     </SocketProvider>
   );
 }

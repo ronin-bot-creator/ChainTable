@@ -1,5 +1,6 @@
 import React from "react";
 import type { WildColor } from "../types/game";
+import { useTranslation } from 'react-i18next';
 
 interface ColorPickerProps {
   isVisible: boolean;
@@ -12,13 +13,15 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   onColorSelect,
   onCancel,
 }) => {
+  const { t } = useTranslation();
+  
   if (!isVisible) return null;
 
-  const colors: { key: WildColor; name: string; color: string }[] = [
-    { key: "Red", name: "Rojo", color: "#E53E3E" },
-    { key: "Blue", name: "Azul", color: "#3182CE" },
-    { key: "Green", name: "Verde", color: "#38A169" },
-    { key: "Yellow", name: "Amarillo", color: "#D69E2E" },
+  const colors: { key: WildColor; nameKey: string; color: string }[] = [
+    { key: "Red", nameKey: "color_red", color: "#E53E3E" },
+    { key: "Blue", nameKey: "color_blue", color: "#3182CE" },
+    { key: "Green", nameKey: "color_green", color: "#38A169" },
+    { key: "Yellow", nameKey: "color_yellow", color: "#D69E2E" },
   ];
 
   return (
@@ -26,11 +29,11 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
       <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-8 shadow-2xl border border-gray-200 animate-slide-in-up">
         <div className="flex items-center justify-center gap-3 mb-6">
           <span className="text-3xl">🎨</span>
-          <h3 className="text-2xl font-bold text-gray-800">Elige un color</h3>
+          <h3 className="text-2xl font-bold text-gray-800">{t('choose_color')}</h3>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-6">
-          {colors.map(({ key, name, color }) => (
+          {colors.map(({ key, nameKey, color }) => (
             <button
               key={key}
               onClick={() => onColorSelect(key)}
@@ -41,7 +44,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
                 className="w-16 h-16 rounded-full mb-3 group-hover:scale-125 transition-transform shadow-lg"
                 style={{ backgroundColor: color }}
               />
-              <span className="text-base font-bold text-gray-800">{name}</span>
+              <span className="text-base font-bold text-gray-800">{t(nameKey)}</span>
             </button>
           ))}
         </div>
@@ -52,7 +55,7 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
               onClick={onCancel}
               className="px-6 py-2 text-gray-500 hover:text-gray-700 text-sm font-semibold transition-colors"
             >
-              Cancelar
+              {t('cancel')}
             </button>
           </div>
         )}
